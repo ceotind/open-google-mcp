@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "google-ads-mcp": {
+      "command": "/ABSOLUTE/PATH/TO/mcp-server-google-ads/server.sh"
+    }
+  }
+}

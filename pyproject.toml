@@ -1,0 +1,29 @@
+[project]
+name = "google-ads-mcp-reader"
+version = "0.1.0"
+description = "Read-only MCP server for querying Google Ads data via GAQL"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    { name = "Sharp Digital" },
+]
+keywords = ["mcp", "google-ads", "ads", "gaql", "marketing"]
+dependencies = [
+    "mcp>=1.0.0",
+    "google-ads>=25.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/sharpspirit/mcp-server-google-ads"
+Repository = "https://github.com/sharpspirit/mcp-server-google-ads"
+
+[project.scripts]
+google-ads-mcp-reader = "google_ads_mcp_reader.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

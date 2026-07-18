@@ -15,8 +15,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/sharpspirit/mcp-server-google-ads"
-Repository = "https://github.com/sharpspirit/mcp-server-google-ads"
+Homepage = "https://github.com/ceotind/readonly-mcp-google-ads"
+Repository = "https://github.com/ceotind/readonly-mcp-google-ads"
 
 [project.scripts]
 google-ads-mcp-reader = "google_ads_mcp_reader.__main__:main"

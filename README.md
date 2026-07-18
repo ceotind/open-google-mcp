@@ -30,8 +30,8 @@ If `search` targets a **manager (MCC) account** and finds no data directly, it a
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/sharpspirit/mcp-server-google-ads.git
-cd mcp-server-google-ads
+git clone https://github.com/ceotind/readonly-mcp-google-ads.git
+cd readonly-mcp-google-ads
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .

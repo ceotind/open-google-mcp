@@ -24,6 +24,46 @@ def _expand_path(path: str | None) -> str | None:
     return os.path.expandvars(os.path.expanduser(path))
 
 
+def _load_service_account_creds() -> service_account.Credentials | None:
+    """Try to load service account credentials from env vars or file.
+
+    Priority: GSC_CREDENTIALS_PATH or GOOGLE_ADS_JSON_KEY_FILE (file path),
+    then individual GOOGLE_SERVICE_ACCOUNT_* env vars.
+    """
+    creds_path = _expand_path(
+        os.environ.get("GSC_CREDENTIALS_PATH")
+        or os.environ.get("GOOGLE_ADS_JSON_KEY_FILE")
+    )
+    if creds_path:
+        if not os.path.exists(creds_path):
+            raise FileNotFoundError(
+                f"Credential file set to {creds_path!r} but does not exist."
+            )
+        return service_account.Credentials.from_service_account_file(
+            creds_path, scopes=SCOPES,
+        )
+
+    email = os.environ.get("GOOGLE_SERVICE_ACCOUNT_EMAIL")
+    key = os.environ.get("GOOGLE_SERVICE_ACCOUNT_KEY")
+    if email and key:
+        info = {
+            "type": "service_account",
+            "client_email": email,
+            "private_key": key.replace("\\n", "\n"),
+            "private_key_id": os.environ.get("GOOGLE_SERVICE_ACCOUNT_KEY_ID", ""),
+            "client_id": os.environ.get("GOOGLE_SERVICE_ACCOUNT_CLIENT_ID", ""),
+            "project_id": os.environ.get("GOOGLE_SERVICE_ACCOUNT_PROJECT_ID", ""),
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+        }
+        return service_account.Credentials.from_service_account_info(
+            info, scopes=SCOPES,
+        )
+
+    return None
+
+
 def _oauth_client_config() -> dict | None:
     """Build an OAuth client config dict from existing env vars.
 
@@ -65,20 +105,8 @@ def get_service() -> Resource:
         return _service
 
     # Option A: Service account (headless / automated)
-    # Checks GSC_CREDENTIALS_PATH first, then falls back to GOOGLE_ADS_JSON_KEY_FILE
-    # so a single service account works for both APIs.
-    creds_path = _expand_path(
-        os.environ.get("GSC_CREDENTIALS_PATH")
-        or os.environ.get("GOOGLE_ADS_JSON_KEY_FILE")
-    )
-    if creds_path:
-        if not os.path.exists(creds_path):
-            raise FileNotFoundError(
-                f"GSC_CREDENTIALS_PATH is set to {creds_path!r} but the file does not exist."
-            )
-        creds = service_account.Credentials.from_service_account_file(
-            creds_path, scopes=SCOPES
-        )
+    creds = _load_service_account_creds()
+    if creds:
         _service = build("searchconsole", "v1", credentials=creds, cache_discovery=False)
         return _service
 

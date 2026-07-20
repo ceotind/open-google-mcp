@@ -29,14 +29,25 @@ If `search` targets a **manager (MCC) account** and finds no data directly, it a
 
 ## Setup
 
-### Prerequisites
+### Prerequisites (both paths)
 
 - A Google Ads developer token (apply via Google Ads API Center)
 - Google Cloud service account with both APIs enabled:
   - [Google Ads API](https://console.cloud.google.com/apis/library/googleads.googleapis.com)
   - [Search Console API](https://console.cloud.google.com/apis/library/searchconsole.googleapis.com)
 
-### 1. Create and authorize a service account
+---
+
+### Option A: Docker (recommended — no Python required)
+
+#### 1. Clone
+
+```bash
+git clone https://github.com/ceotind/open-google-mcp.git
+cd open-google-mcp
+```
+
+#### 2. Create and authorize a service account
 
 A single service account authenticates both Google Ads and Search Console.
 
@@ -52,16 +63,12 @@ A single service account authenticates both Google Ads and Search Console.
 4. **Search Console**: add the same email to your property
    (**Settings → Users and permissions → Add user**, grant Full access)
 
-### 2. Configure environment
-
-Copy `.env.example` and fill in your credentials:
+#### 3. Configure `.env`
 
 ```bash
 cp .env.example .env
-# Edit .env with your values
+# Edit .env with the service account values + developer token
 ```
-
-Required variables:
 
 | Variable | Description |
 |----------|-------------|
@@ -71,31 +78,20 @@ Required variables:
 | `GOOGLE_SERVICE_ACCOUNT_KEY_ID` | Private key ID |
 | `GOOGLE_SERVICE_ACCOUNT_CLIENT_ID` | Client ID |
 | `GOOGLE_SERVICE_ACCOUNT_PROJECT_ID` | GCP project ID |
+| `GOOGLE_ADS_LOGIN_CUSTOMER_ID` | Optional — for MCC account routing |
 
-Optional: `GOOGLE_ADS_LOGIN_CUSTOMER_ID` for MCC account routing.
-
----
-
-## Run via Docker (recommended — no Python required)
-
-### Build
+#### 4. Build and run
 
 ```bash
 docker compose build
-```
-
-### Run
-
-```bash
 docker compose run --rm open-google-mcp
 ```
 
-### MCP Client Configuration
+#### 5. MCP client config
 
 All configs point to the project directory (where `.env` lives):
 
-#### Claude Desktop
-
+**Claude Desktop:**
 ```json
 {
   "mcpServers": {
@@ -108,8 +104,7 @@ All configs point to the project directory (where `.env` lives):
 }
 ```
 
-#### opencode
-
+**opencode:**
 ```json
 {
   "mcp": {
@@ -123,9 +118,7 @@ All configs point to the project directory (where `.env` lives):
 }
 ```
 
-#### Cursor
-
-Settings → MCP Servers → Add:
+**Cursor:**
 - **Name**: `open-google-mcp`
 - **Type**: `command`
 - **Command**: `docker compose run --rm open-google-mcp`
@@ -133,9 +126,9 @@ Settings → MCP Servers → Add:
 
 ---
 
-## Run via Python (local install)
+### Option B: Python (local install)
 
-### Clone and install
+#### 1. Clone and install
 
 ```bash
 git clone https://github.com/ceotind/open-google-mcp.git
@@ -145,7 +138,37 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-### Run
+#### 2. Create and authorize a service account
+
+Same steps as Option A above — a single service account works for both Ads and GSC.
+
+1. Go to **GCP Console → APIs & Services → Credentials → Create Credentials → Service Account**
+2. Download the JSON key file, then copy these fields into `.env`:
+   - `GOOGLE_SERVICE_ACCOUNT_EMAIL`
+   - `GOOGLE_SERVICE_ACCOUNT_KEY`
+   - `GOOGLE_SERVICE_ACCOUNT_KEY_ID`
+   - `GOOGLE_SERVICE_ACCOUNT_CLIENT_ID`
+   - `GOOGLE_SERVICE_ACCOUNT_PROJECT_ID`
+3. **Google Ads**: add the service account email in your manager account
+4. **Search Console**: add the same email to your property with Full access
+
+#### 3. Configure `.env`
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Description |
+|----------|-------------|
+| `GOOGLE_ADS_DEVELOPER_TOKEN` | Your Google Ads API developer token |
+| `GOOGLE_SERVICE_ACCOUNT_EMAIL` | Service account email |
+| `GOOGLE_SERVICE_ACCOUNT_KEY` | Private key (with `\n` newlines) |
+| `GOOGLE_SERVICE_ACCOUNT_KEY_ID` | Private key ID |
+| `GOOGLE_SERVICE_ACCOUNT_CLIENT_ID` | Client ID |
+| `GOOGLE_SERVICE_ACCOUNT_PROJECT_ID` | GCP project ID |
+| `GOOGLE_ADS_LOGIN_CUSTOMER_ID` | Optional — for MCC account routing |
+
+#### 4. Run
 
 ```bash
 source .venv/bin/activate
@@ -153,10 +176,9 @@ source .env
 python -m open_google_mcp
 ```
 
-### MCP Client Configuration
+#### 5. MCP client config
 
-#### Claude Desktop
-
+**Claude Desktop:**
 ```json
 {
   "mcpServers": {
@@ -179,8 +201,7 @@ python -m open_google_mcp
 }
 ```
 
-Or use the wrapper script (env vars loaded from `.env`):
-
+Or use the wrapper script (loads `.env` automatically):
 ```json
 {
   "mcpServers": {
@@ -191,8 +212,7 @@ Or use the wrapper script (env vars loaded from `.env`):
 }
 ```
 
-#### opencode
-
+**opencode:**
 ```json
 {
   "mcp": {
@@ -205,13 +225,11 @@ Or use the wrapper script (env vars loaded from `.env`):
 }
 ```
 
-#### Cursor
-
-Settings → MCP Servers → Add:
+**Cursor:**
 - **Name**: `open-google-mcp`
 - **Type**: `command`
 - **Command**: `uv --directory /path/to/open-google-mcp run python -m open_google_mcp`
-- **Env vars**: Add all `GOOGLE_ADS_DEVELOPER_TOKEN` and `GOOGLE_SERVICE_ACCOUNT_*` variables
+- **Env vars**: All `GOOGLE_ADS_DEVELOPER_TOKEN` + `GOOGLE_SERVICE_ACCOUNT_*` variables
 
 ## Usage Examples
 

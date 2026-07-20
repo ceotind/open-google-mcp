@@ -1,0 +1,6 @@
+services:
+  open-google-mcp:
+    build: .
+    env_file: .env
+    stdin_open: true
+    tty: true

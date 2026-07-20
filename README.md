@@ -31,23 +31,12 @@ If `search` targets a **manager (MCC) account** and finds no data directly, it a
 
 ### Prerequisites
 
-- Python 3.10+
 - A Google Ads developer token (apply via Google Ads API Center)
 - Google Cloud service account with both APIs enabled:
   - [Google Ads API](https://console.cloud.google.com/apis/library/googleads.googleapis.com)
   - [Search Console API](https://console.cloud.google.com/apis/library/searchconsole.googleapis.com)
 
-### 1. Clone and install
-
-```bash
-git clone https://github.com/ceotind/open-google-mcp.git
-cd open-google-mcp
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-```
-
-### 2. Create and authorize a service account
+### 1. Create and authorize a service account
 
 A single service account authenticates both Google Ads and Search Console.
 
@@ -63,7 +52,7 @@ A single service account authenticates both Google Ads and Search Console.
 4. **Search Console**: add the same email to your property
    (**Settings → Users and permissions → Add user**, grant Full access)
 
-### 3. Configure environment
+### 2. Configure environment
 
 Copy `.env.example` and fill in your credentials:
 
@@ -85,7 +74,78 @@ Required variables:
 
 Optional: `GOOGLE_ADS_LOGIN_CUSTOMER_ID` for MCC account routing.
 
-### 4. Run
+---
+
+## Run via Docker (recommended — no Python required)
+
+### Build
+
+```bash
+docker compose build
+```
+
+### Run
+
+```bash
+docker compose run --rm open-google-mcp
+```
+
+### MCP Client Configuration
+
+All configs point to the project directory (where `.env` lives):
+
+#### Claude Desktop
+
+```json
+{
+  "mcpServers": {
+    "open-google-mcp": {
+      "command": "docker",
+      "args": ["compose", "run", "--rm", "open-google-mcp"],
+      "workdir": "/path/to/open-google-mcp"
+    }
+  }
+}
+```
+
+#### opencode
+
+```json
+{
+  "mcp": {
+    "open-google-mcp": {
+      "type": "local",
+      "command": ["docker", "compose", "run", "--rm", "open-google-mcp"],
+      "workdir": "/path/to/open-google-mcp",
+      "enabled": true
+    }
+  }
+}
+```
+
+#### Cursor
+
+Settings → MCP Servers → Add:
+- **Name**: `open-google-mcp`
+- **Type**: `command`
+- **Command**: `docker compose run --rm open-google-mcp`
+- **Working directory**: `/path/to/open-google-mcp`
+
+---
+
+## Run via Python (local install)
+
+### Clone and install
+
+```bash
+git clone https://github.com/ceotind/open-google-mcp.git
+cd open-google-mcp
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+
+### Run
 
 ```bash
 source .venv/bin/activate
@@ -93,13 +153,9 @@ source .env
 python -m open_google_mcp
 ```
 
-Uses stdio transport by default (for Claude Desktop, Cursor, opencode, etc.).
+### MCP Client Configuration
 
-## MCP Client Configuration
-
-### Claude Desktop
-
-Add to your `claude_desktop_config.json`:
+#### Claude Desktop
 
 ```json
 {
@@ -135,9 +191,7 @@ Or use the wrapper script (env vars loaded from `.env`):
 }
 ```
 
-### opencode
-
-Add to your `opencode.jsonc`:
+#### opencode
 
 ```json
 {
@@ -151,10 +205,9 @@ Add to your `opencode.jsonc`:
 }
 ```
 
-### Cursor
+#### Cursor
 
-Go to Settings → MCP Servers → Add:
-
+Settings → MCP Servers → Add:
 - **Name**: `open-google-mcp`
 - **Type**: `command`
 - **Command**: `uv --directory /path/to/open-google-mcp run python -m open_google_mcp`

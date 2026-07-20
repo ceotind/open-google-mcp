@@ -1,21 +1,22 @@
-# Google Ads MCP Reader
+# Open Google MCP
 
-A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for querying Google Ads data using GAQL (Google Ads Query Language). Designed for AI assistants and LLM agents to safely read campaign performance, ad groups, keywords, and more.
+A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for Google **Ads** (via GAQL) and **Search Console**. Designed for AI assistants and LLM agents to safely read campaign performance, search analytics, and more.
 
 ## Tools
 
 | Tool | Input | Description |
 |------|-------|-------------|
-| `list_accessible_customers` | — | Discover which Google Ads account IDs are accessible |
+| `list_accessible_customers` | — | Discover Google Ads account IDs |
 | `get_resource_metadata` | `resource_name` | Explore selectable/filterable/sortable fields for a resource |
 | `search` | `customer_id`, `resource`, `fields`, `conditions?`, `orderings?`, `limit?` | Execute read-only GAQL queries |
-| `gsc_list_properties` | — | List all Google Search Console properties |
-| `gsc_get_site_details` | `site_url` | Get verification details for a GSC property |
+| `gsc_get_capabilities` | — | Get categorized tool list with auth status |
+| `gsc_list_properties` | — | List all GSC properties (start here) |
+| `gsc_get_site_details` | `site_url` | Verification/ownership for a property |
 | `gsc_get_search_analytics` | `site_url`, `days?`, `dimensions?`, `row_limit?` | Top queries with clicks, impressions, CTR, position |
-| `gsc_get_performance_overview` | `site_url`, `days?` | Performance summary with daily trend |
-| `gsc_compare_search_periods` | `site_url`, `period1_start`, `period1_end`, `period2_start`, `period2_end` | Compare performance between two date ranges |
-| `gsc_get_advanced_search_analytics` | `site_url`, `start_date?`, `end_date?`, `dimensions?`, `search_type?`, `row_limit?`, `start_row?`, `sort_by?`, `sort_direction?`, `filters?` | Analytics with filtering, sorting, pagination |
-| `gsc_inspect_url` | `site_url`, `page_url` | Check crawl/index status of a URL |
+| `gsc_get_performance_overview` | `site_url`, `days?` | Executive summary with daily trend |
+| `gsc_compare_search_periods` | `site_url`, `period1_start/end`, `period2_start/end` | Compare two date ranges |
+| `gsc_get_advanced_search_analytics` | `site_url`, `start_date?`, `end_date?`, `dimensions?`, `search_type?`, `row_limit?`, `start_row?`, `sort_by?`, `sort_direction?`, `filters?` | Filtered, sorted, paginated analytics |
+| `gsc_inspect_url` | `site_url`, `page_url` | Debug a URL's crawl/index status |
 | `gsc_get_sitemaps` | `site_url` | List sitemaps with status and errors |
 
 ### Manager Account Auto-Routing
@@ -32,20 +33,37 @@ If `search` targets a **manager (MCC) account** and finds no data directly, it a
 
 - Python 3.10+
 - A Google Ads developer token (apply via Google Ads API Center)
-- Google Ads API access enabled for your account
-- OAuth 2.0 credentials or Application Default Credentials (ADC)
+- Google Cloud service account with both APIs enabled:
+  - [Google Ads API](https://console.cloud.google.com/apis/library/googleads.googleapis.com)
+  - [Search Console API](https://console.cloud.google.com/apis/library/searchconsole.googleapis.com)
 
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/ceotind/readonly-mcp-google-ads.git
-cd readonly-mcp-google-ads
+git clone https://github.com/ceotind/open-google-mcp.git
+cd open-google-mcp
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
 ```
 
-### 2. Configure authentication
+### 2. Create and authorize a service account
+
+A single service account authenticates both Google Ads and Search Console.
+
+1. Go to **GCP Console → APIs & Services → Credentials → Create Credentials → Service Account**
+2. Download the JSON key file, then copy these fields into `.env`:
+   - `GOOGLE_SERVICE_ACCOUNT_EMAIL`
+   - `GOOGLE_SERVICE_ACCOUNT_KEY` (the `private_key` — keep the `\n` escapes)
+   - `GOOGLE_SERVICE_ACCOUNT_KEY_ID`
+   - `GOOGLE_SERVICE_ACCOUNT_CLIENT_ID`
+   - `GOOGLE_SERVICE_ACCOUNT_PROJECT_ID`
+3. **Google Ads**: add the service account email in your manager account
+   (**Settings → Account access → Service account users**)
+4. **Search Console**: add the same email to your property
+   (**Settings → Users and permissions → Add user**, grant Full access)
+
+### 3. Configure environment
 
 Copy `.env.example` and fill in your credentials:
 
@@ -54,35 +72,25 @@ cp .env.example .env
 # Edit .env with your values
 ```
 
-**Authentication methods:**
+Required variables:
 
-| Method | Env vars required | Notes |
-|--------|------------------|-------|
-| ADC (recommended) | `GOOGLE_ADS_DEVELOPER_TOKEN` | Run `gcloud auth application-default login` |
-| OAuth refresh token | `GOOGLE_ADS_DEVELOPER_TOKEN` + `GOOGLE_ADS_REFRESH_TOKEN` + `GOOGLE_ADS_CLIENT_ID` + `GOOGLE_ADS_CLIENT_SECRET` | For automated environments |
+| Variable | Description |
+|----------|-------------|
+| `GOOGLE_ADS_DEVELOPER_TOKEN` | Your Google Ads API developer token |
+| `GOOGLE_SERVICE_ACCOUNT_EMAIL` | Service account email |
+| `GOOGLE_SERVICE_ACCOUNT_KEY` | Private key (with `\n` newlines) |
+| `GOOGLE_SERVICE_ACCOUNT_KEY_ID` | Private key ID |
+| `GOOGLE_SERVICE_ACCOUNT_CLIENT_ID` | Client ID |
+| `GOOGLE_SERVICE_ACCOUNT_PROJECT_ID` | GCP project ID |
 
-**Google Search Console authentication** reuses your existing Google Ads OAuth
-credentials (`GOOGLE_ADS_CLIENT_ID` and `GOOGLE_ADS_CLIENT_SECRET`) — no
-additional environment variables needed.
+Optional: `GOOGLE_ADS_LOGIN_CUSTOMER_ID` for MCC account routing.
 
-Make sure the [Search Console API](https://console.cloud.google.com/apis/library/searchconsole.googleapis.com)
-is enabled in your GCP project and the `.../auth/webmasters.readonly` scope is
-added to your [OAuth consent screen](https://console.cloud.google.com/apis/credentials/consent).
-
-On first use of any GSC tool, a browser window opens for you to authorize the
-GSC scope. The token is cached afterwards.
-
-| Alternative method | Env var | Notes |
-|-------------------|---------|-------|
-| Dedicated OAuth file | `GSC_OAUTH_CLIENT_SECRETS_FILE` | Path to a Desktop app client_secrets.json |
-| Service account | `GSC_CREDENTIALS_PATH` | For headless/automated environments |
-
-### 3. Run
+### 4. Run
 
 ```bash
 source .venv/bin/activate
 source .env
-python -m google_ads_mcp_reader
+python -m open_google_mcp
 ```
 
 Uses stdio transport by default (for Claude Desktop, Cursor, opencode, etc.).
@@ -96,28 +104,32 @@ Add to your `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "google-ads": {
+    "open-google-mcp": {
       "command": "uv",
       "args": [
-        "--directory", "/path/to/mcp-server-google-ads",
-        "run", "python", "-m", "google_ads_mcp_reader"
+        "--directory", "/path/to/open-google-mcp",
+        "run", "python", "-m", "open_google_mcp"
       ],
       "env": {
         "GOOGLE_ADS_DEVELOPER_TOKEN": "your_token",
-        "GOOGLE_ADS_LOGIN_CUSTOMER_ID": "your_optional_mcc_id"
+        "GOOGLE_SERVICE_ACCOUNT_EMAIL": "your-sa@project.iam.gserviceaccount.com",
+        "GOOGLE_SERVICE_ACCOUNT_KEY": "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n",
+        "GOOGLE_SERVICE_ACCOUNT_KEY_ID": "your_key_id",
+        "GOOGLE_SERVICE_ACCOUNT_CLIENT_ID": "your_client_id",
+        "GOOGLE_SERVICE_ACCOUNT_PROJECT_ID": "your_project_id"
       }
     }
   }
 }
 ```
 
-Or use the wrapper script:
+Or use the wrapper script (env vars loaded from `.env`):
 
 ```json
 {
   "mcpServers": {
-    "google-ads": {
-      "command": "/path/to/mcp-server-google-ads/server.sh"
+    "open-google-mcp": {
+      "command": "/path/to/open-google-mcp/server.sh"
     }
   }
 }
@@ -130,9 +142,9 @@ Add to your `opencode.jsonc`:
 ```json
 {
   "mcp": {
-    "google-ads-mcp": {
+    "open-google-mcp": {
       "type": "local",
-      "command": ["/path/to/mcp-server-google-ads/server.sh"],
+      "command": ["/path/to/open-google-mcp/server.sh"],
       "enabled": true
     }
   }
@@ -143,14 +155,14 @@ Add to your `opencode.jsonc`:
 
 Go to Settings → MCP Servers → Add:
 
-- **Name**: `google-ads`
+- **Name**: `open-google-mcp`
 - **Type**: `command`
-- **Command**: `uv --directory /path/to/mcp-server-google-ads run python -m google_ads_mcp_reader`
-- **Env vars**: Add `GOOGLE_ADS_DEVELOPER_TOKEN`, etc.
+- **Command**: `uv --directory /path/to/open-google-mcp run python -m open_google_mcp`
+- **Env vars**: Add all `GOOGLE_ADS_DEVELOPER_TOKEN` and `GOOGLE_SERVICE_ACCOUNT_*` variables
 
 ## Usage Examples
 
-### List accounts
+### List Ads accounts
 
 ```
 list_accessible_customers

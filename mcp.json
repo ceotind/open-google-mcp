@@ -1,7 +1,8 @@
 {
   "mcpServers": {
-    "google-ads-mcp": {
-      "command": "/ABSOLUTE/PATH/TO/readonly-mcp-google-ads/server.sh"
+    "open-google-mcp": {
+      "command": "/ABSOLUTE/PATH/TO/open-google-mcp/server.sh",
+      "env": {}
     }
   }
 }

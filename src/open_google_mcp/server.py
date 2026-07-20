@@ -3,6 +3,7 @@ import sys
 import traceback
 from collections.abc import Sequence
 from datetime import datetime, timedelta
+from typing import Literal
 
 from google.ads.googleads.errors import GoogleAdsException
 from googleapiclient.errors import HttpError
@@ -12,12 +13,12 @@ from mcp.server.fastmcp import FastMCP
 from . import client as ads_client
 from . import gsc_client
 
-mcp = FastMCP("Google Ads MCP Reader")
+mcp = FastMCP("Open Google MCP")
 
 
 def _log_exc(context: str) -> None:
     """Log full traceback to stderr so real errors are never masked."""
-    print(f"[google-ads-mcp-reader] ERROR in {context}:", file=sys.stderr)
+    print(f"[open-google-mcp] ERROR in {context}:", file=sys.stderr)
     traceback.print_exc(file=sys.stderr)
 
 
@@ -106,10 +107,10 @@ def _get_child_accounts(client, customer_id: str) -> list[dict]:
 
 @mcp.tool()
 def list_accessible_customers() -> list[str]:
-    """Returns IDs of Google Ads accounts accessible by the authenticated user.
-
-    Use this as the FIRST tool call to discover available customer IDs
-    before using other tools. Most other tools require a valid customer ID.
+    """**Start here** — Discover Google Ads customer IDs accessible by the
+    authenticated user. Always call this first before search(). Returns
+    resource names like 'customers/1234567890' — extract the numeric ID
+    from the last segment to use in other tools.
     """
     try:
         client = ads_client.get_client()
@@ -128,23 +129,22 @@ def list_accessible_customers() -> list[str]:
 def get_resource_metadata(
     resource_name: str,
 ) -> dict:
-    """Discovers which fields can be SELECTed, FILTERed, and SORTed by for a
-    given Google Ads resource.
+    """Discover which fields are SELECTable, FILTERable, and SORTable for a
+    Google Ads resource. **Always call this before search()** — using incorrect
+    field names causes API errors. Compatible metrics.* and segments.* fields
+    are included for reporting queries.
 
-    Returns a dict with arrays: 'selectable', 'filterable', and 'sortable'.
-    Compatible 'metrics.*' and 'segments.*' fields are included for reporting
-    queries.
+    Args:
+        resource_name: The resource to explore (e.g. 'campaign', 'ad_group',
+                       'keyword_view', 'search_term_view', 'customer_client').
 
-    ALWAYS call this tool BEFORE constructing a search query to ensure you
-    use correct, fully-qualified field names. Incorrect field names cause
-    Google Ads API errors.
-
-    Example output for resource='campaign':
-      selectable: ['campaign.id', 'campaign.name', 'campaign.status',
-        'campaign.advertising_channel_type', 'metrics.clicks',
-        'metrics.cost_micros', 'metrics.impressions', 'segments.date', ...]
-      filterable: ['campaign.id', 'campaign.name', 'campaign.status', ...]
-      sortable: ['campaign.id', 'metrics.clicks', ...]
+    Returns:
+        A dict with resource name and three sorted arrays of fully-qualified
+        field names. Example for resource='campaign':
+          selectable: ['campaign.id', 'campaign.name', 'campaign.status',
+                       'metrics.clicks', 'metrics.impressions', ...]
+          filterable: ['campaign.id', 'campaign.status', ...]
+          sortable: ['campaign.id', 'metrics.clicks', ...]
     """
     try:
         client = ads_client.get_client()
@@ -195,46 +195,42 @@ def search(
     orderings: Sequence[str] | None = None,
     limit: int | None = 100,
 ) -> list[dict]:
-    """Executes a read-only GAQL (Google Ads Query Language) query and returns
-    results as a list of flat dicts with dot-separated keys.
+    """Execute a read-only GAQL query and return flattened results.
+    **Workflow:** list_accessible_customers() → get_resource_metadata(resource) → search()
 
-    If the customer_id is a **manager (MCC) account** and the query targets a
-    resource that lives on client accounts (campaign, ad_group, ad_group_ad, etc.),
-    this tool AUTOMATICALLY finds child accounts and runs the query on each of
-    them, returning results from all children with a `_source_customer_id` field
-    added to identify which account each row came from.
+    If customer_id is a **manager (MCC) account**, this auto-routes to child
+    accounts and annotates results with _source_customer_id and
+    _source_customer_name — no manual child enumeration needed.
 
-    USAGE WORKFLOW:
-      1. Call list_accessible_customers to find available account IDs
-      2. Call get_resource_metadata(resource) to discover valid field names
-      3. Call this tool with customer_id, resource, and discovered fields
-         — manager accounts are handled automatically
+    Field rules:
+    - Use fully-qualified names: campaign.id (not id), metrics.clicks, segments.date
+    - Dates: YYYY-MM-DD format with dashes
+    - Relative ranges: DURING LAST_7_DAYS, LAST_30_DAYS, THIS_MONTH, THIS_QUARTER
+    - Conditions are AND-combined
+    - Ordering: 'field_name DIRECTION' (e.g. 'metrics.clicks DESC')
+    - For change_event resource, limit max is 10000
 
-    KEY RULES:
-      - Field names MUST be fully qualified (e.g. 'campaign.id', not 'id')
-      - Dates MUST be in YYYY-MM-DD format with dashes
-      - Use DURING for relative ranges: DURING LAST_7_DAYS, LAST_30_DAYS,
-        THIS_MONTH, LAST_MONTH, THIS_QUARTER, THIS_YEAR
-      - For change_event resource, limit MUST be <= 10000
-      - Conditions are combined with AND
-
-    COMMON CONDITIONS:
+    Common conditions:
       campaign.status = 'ENABLED'
       campaign.advertising_channel_type = 'SEARCH'
       segments.date DURING LAST_30_DAYS
       metrics.impressions > 1000
-      ad_group.status != 'REMOVED'
-      campaign.id IN (123, 456)
 
-    ORDERING FORMAT: 'field_name DIRECTION' (e.g. 'metrics.clicks DESC')
-
-    EXAMPLE - active campaigns this week with performance:
+    Example — active campaigns with performance:
       customer_id='1234567890', resource='campaign',
       fields=['campaign.id', 'campaign.name', 'campaign.status',
         'metrics.clicks', 'metrics.impressions', 'metrics.cost_micros'],
-      conditions=["campaign.status = 'ENABLED'",
-        'segments.date DURING LAST_7_DAYS'],
+      conditions=["campaign.status = 'ENABLED'", 'segments.date DURING LAST_7_DAYS'],
       orderings=['metrics.clicks DESC'], limit=10
+
+    Args:
+        customer_id: Numeric Google Ads customer ID (e.g. '1234567890').
+                     Manager (MCC) accounts are auto-detected and routed.
+        resource: GAQL resource name (e.g. 'campaign', 'ad_group', 'keyword_view').
+        fields: Fully-qualified field names to SELECT.
+        conditions: WHERE clauses joined with AND (optional).
+        orderings: ORDER BY clauses (optional).
+        limit: Max results (default: 100, max varies by resource).
     """
     _conditions = conditions or []
     _orderings = orderings or []
@@ -315,18 +311,68 @@ def _gsc_handle_error(context: str, e: Exception) -> dict:
     if isinstance(e, HttpError):
         status = e.resp.status
         body = json.loads(e.content.decode()) if e.content else {}
-        msg = body.get("error", {}).get("message", str(e))
+        error_info = body.get("error", {})
+        msg = error_info.get("message", str(e))
+        reason = error_info.get("errors", [{}])[0].get("reason", "")
+        if status == 403 and "insufficientPermissions" in reason:
+            return {
+                "error": "Access denied. The service account or user needs to be added "
+                         "to this GSC property (Search Console → Settings → Users and "
+                         "permissions → Add user)."
+            }
+        if status == 404:
+            return {
+                "error": f"Property not found. Run gsc_list_properties to get the exact "
+                         f"site_url value — it might be 'sc-domain:example.com' instead "
+                         f"of 'https://example.com/'."
+            }
+        if status == 429:
+            return {
+                "error": "GSC API rate limit exceeded. Wait a moment before retrying."
+            }
         return {"error": f"GSC API Error (HTTP {status}): {msg}"}
+    if isinstance(e, ValueError):
+        return {"error": str(e)}
     return {"error": f"{type(e).__name__}: {e}"}
 
 
 @mcp.tool()
-def gsc_list_properties() -> dict:
-    """List all Google Search Console properties accessible by the authenticated user.
+def gsc_get_capabilities() -> str:
+    """Get a categorized list of all available GSC tools and authentication status.
+    Call this first if you're unsure which GSC tool to use, whether the server
+    is authenticated, or what tools are available. Faster than searching individually.
+    """
+    try:
+        gsc_client.get_service()
+        auth = "Connected"
+    except Exception as e:
+        auth = f"Not connected — {e}"
 
-    Returns an object with a count and array of properties, each containing
-    site_url and permission_level. Call this first to discover the exact
-    site_url strings needed by other GSC tools.
+    return (
+        "Google Search Console Tools\n\n"
+        f"Auth status: {auth}\n\n"
+        "Start with:  gsc_list_properties  (to get site_url values)\n\n"
+        "Discovery:\n"
+        "  gsc_list_properties    — List all GSC properties (always start here)\n"
+        "  gsc_get_site_details   — Verification/ownership for a specific property\n\n"
+        "Analytics:\n"
+        "  gsc_get_search_analytics          — Top queries/pages (quick overview)\n"
+        "  gsc_get_performance_overview      — Executive summary with daily trend\n"
+        "  gsc_compare_search_periods        — Month-over-month or week-over-week\n"
+        "  gsc_get_advanced_search_analytics — Filtered, sorted, paginated (deep dive)\n\n"
+        "Indexing:\n"
+        "  gsc_inspect_url — Debug a single URL's crawl/index/rich result status\n\n"
+        "Sitemaps:\n"
+        "  gsc_get_sitemaps — View sitemaps, errors, and indexed URL counts"
+    )
+
+
+@mcp.tool()
+def gsc_list_properties() -> dict:
+    """**Start here** — Discover all GSC properties the user has access to.
+
+    Returns the exact site_url strings needed by every other GSC tool.
+    Always call this first before using any other GSC tool.
     """
     try:
         service = gsc_client.get_service()
@@ -348,11 +394,13 @@ def gsc_list_properties() -> dict:
 
 @mcp.tool()
 def gsc_get_site_details(site_url: str) -> dict:
-    """Get verification and ownership details for a specific GSC property.
+    """Get verification status and ownership details for a specific GSC property.
+    Use this to check permission level, verification method, and ownership info.
 
     Args:
-        site_url: Exact GSC property URL from gsc_list_properties
-                  (e.g. 'https://example.com/' or 'sc-domain:example.com')
+        site_url: Exact GSC property URL from gsc_list_properties.
+                  Format: 'https://example.com/' (URL-prefix) or
+                  'sc-domain:example.com' (domain property).
     """
     try:
         service = gsc_client.get_service()
@@ -372,14 +420,20 @@ def gsc_get_search_analytics(
     dimensions: str = "query",
     row_limit: int = 20,
 ) -> dict:
-    """Get top search queries and pages with clicks, impressions, CTR, and position.
+    """Get top-performing queries and pages with clicks, impressions, CTR, position.
+    **Use this for:** identifying high-value keywords, tracking rank changes, finding
+    low-CTR opportunities. For filtered or paginated queries, use
+    gsc_get_advanced_search_analytics instead. For an executive summary, use
+    gsc_get_performance_overview.
 
     Args:
-        site_url: Exact GSC property URL from gsc_list_properties
-        days: Number of days to look back (default: 28)
-        dimensions: Dimensions to group by (default: 'query').
-                    Comma-separated options: query, page, device, country, date
-        row_limit: Number of rows to return (default: 20, max: 500)
+        site_url: Exact GSC property URL from gsc_list_properties.
+                  Format: 'https://example.com/' or 'sc-domain:example.com'.
+        days: How many days to look back (default: 28).
+        dimensions: Group results by — 'query', 'page', 'device', 'country', 'date',
+                    or any comma-separated combination (e.g. 'query,device').
+        row_limit: Max rows to return (default: 20, max: 500). Use 5-10 for quick
+                   overviews, 50-200 for deeper analysis.
     """
     try:
         service = gsc_client.get_service()
@@ -419,11 +473,15 @@ def gsc_get_search_analytics(
 
 @mcp.tool()
 def gsc_get_performance_overview(site_url: str, days: int = 28) -> dict:
-    """Get a summary of site performance with a daily trend over the time period.
+    """Get an executive summary with daily trend — totals for clicks, impressions,
+    CTR, and avg position plus a day-by-day breakdown.
+    **Use this for:** quick snapshots, dashboards, spotting traffic spikes or drops.
+    For detailed query-level data, use gsc_get_search_analytics.
 
     Args:
-        site_url: Exact GSC property URL from gsc_list_properties
-        days: Number of days to look back (default: 28)
+        site_url: Exact GSC property URL from gsc_list_properties.
+                  Format: 'https://example.com/' or 'sc-domain:example.com'.
+        days: How many days to look back (default: 28).
     """
     try:
         service = gsc_client.get_service()
@@ -483,16 +541,20 @@ def gsc_compare_search_periods(
     dimensions: str = "query",
     limit: int = 10,
 ) -> dict:
-    """Compare search performance between two date ranges.
+    """Compare search performance between two date ranges and surface what changed.
+    **Use this for:** month-over-month analysis, campaign impact assessment,
+    seasonal trend detection. Returns which queries improved or declined with
+    click/impression changes.
 
     Args:
-        site_url: Exact GSC property URL from gsc_list_properties
-        period1_start: Start date for period 1 (YYYY-MM-DD)
-        period1_end: End date for period 1 (YYYY-MM-DD)
-        period2_start: Start date for period 2 (YYYY-MM-DD)
-        period2_end: End date for period 2 (YYYY-MM-DD)
-        dimensions: Dimensions to group by (default: 'query')
-        limit: Top items per period to compare (default: 10)
+        site_url: Exact GSC property URL from gsc_list_properties.
+                  Format: 'https://example.com/' or 'sc-domain:example.com'.
+        period1_start: Start of baseline period, format YYYY-MM-DD (e.g. '2026-01-01').
+        period1_end: End of baseline period, format YYYY-MM-DD (e.g. '2026-01-31').
+        period2_start: Start of comparison period, format YYYY-MM-DD (e.g. '2026-02-01').
+        period2_end: End of comparison period, format YYYY-MM-DD (e.g. '2026-02-28').
+        dimensions: Group by — 'query', 'page', 'device', etc. (default: 'query').
+        limit: Max items to return, sorted by biggest change (default: 10).
     """
     try:
         service = gsc_client.get_service()
@@ -560,28 +622,34 @@ def gsc_get_advanced_search_analytics(
     start_date: str | None = None,
     end_date: str | None = None,
     dimensions: str = "query",
-    search_type: str = "WEB",
+    search_type: Literal["WEB", "IMAGE", "VIDEO", "NEWS", "DISCOVER"] = "WEB",
     row_limit: int = 100,
     start_row: int = 0,
-    sort_by: str = "clicks",
-    sort_direction: str = "descending",
+    sort_by: Literal["clicks", "impressions", "ctr", "position"] = "clicks",
+    sort_direction: Literal["ascending", "descending"] = "descending",
     filters: str | None = None,
 ) -> dict:
-    """Get search analytics with advanced filtering, sorting, and pagination.
+    """Full-featured search analytics with filtering, sorting, pagination (up to 25K rows).
+    **Use this for:** deep analysis with country/device/page filters, large bulk exports,
+    custom sort orders. For a quick top-N view without filters, use gsc_get_search_analytics
+    instead — it returns faster with less overhead.
 
     Args:
-        site_url: Exact GSC property URL from gsc_list_properties
-        start_date: Start date YYYY-MM-DD (defaults to 28 days ago)
-        end_date: End date YYYY-MM-DD (defaults to today)
-        dimensions: Comma-separated dimensions (query, page, device, country, date)
-        search_type: Search type — WEB, IMAGE, VIDEO, NEWS, DISCOVER
-        row_limit: Max rows to return (max 25000)
-        start_row: Row offset for pagination
-        sort_by: Metric to sort by — clicks, impressions, ctr, position
-        sort_direction: ascending or descending
-        filters: JSON array of filter objects. Each requires dimension, operator, expression.
-                 Operators: contains, equals, notContains, notEquals
-                 Dimensions: query, page, country, device
+        site_url: Exact GSC property URL from gsc_list_properties.
+                  Format: 'https://example.com/' or 'sc-domain:example.com'.
+        start_date: Start date YYYY-MM-DD (default: 28 days ago).
+        end_date: End date YYYY-MM-DD (default: today).
+        dimensions: Group by — comma-separated: query, page, device, country, date.
+        search_type: Which search vertical to query (default: WEB).
+        row_limit: Max rows to return (max 25000, default: 100). Use with start_row
+                   for pagination: first call 100, then 100, then 200... via start_row.
+        start_row: Row offset for pagination (default: 0).
+        sort_by: Metric to sort results by (default: clicks).
+        sort_direction: ascending or descending (default: descending).
+        filters: JSON array of filter objects for AND logic across dimensions.
+                 Each object: {"dimension": "...", "operator": "...", "expression": "..."}
+                 Valid dimensions: query, page, country, device.
+                 Valid operators: contains, equals, notContains, notEquals.
                  Example: '[{"dimension":"country","operator":"equals","expression":"usa"},
                             {"dimension":"device","operator":"equals","expression":"MOBILE"}]'
     """
@@ -647,11 +715,15 @@ def gsc_get_advanced_search_analytics(
 
 @mcp.tool()
 def gsc_inspect_url(site_url: str, page_url: str) -> dict:
-    """Check the crawl, index, and rich result status of a specific URL.
+    """Debug a single URL's indexing status — checks coverage state, crawl date,
+    canonical URL, robots.txt allow/block, page fetch success, and rich results.
+    **Use this for:** diagnosing why a page isn't ranking, checking if Google can
+    crawl a new page, verifying canonical URLs, or troubleshooting indexing issues.
 
     Args:
-        site_url: Exact GSC property URL from gsc_list_properties
-        page_url: The full URL to inspect (e.g. 'https://example.com/page')
+        site_url: Exact GSC property URL from gsc_list_properties.
+                  Format: 'https://example.com/' or 'sc-domain:example.com'.
+        page_url: The full URL to inspect, e.g. 'https://example.com/blog/post'.
     """
     try:
         service = gsc_client.get_service()
@@ -685,10 +757,14 @@ def gsc_inspect_url(site_url: str, page_url: str) -> dict:
 
 @mcp.tool()
 def gsc_get_sitemaps(site_url: str) -> dict:
-    """List all sitemaps for a GSC property with their status and error info.
+    """List all sitemaps for a GSC property with submission status, error/warning
+    counts, and indexed URL totals.
+    **Use this for:** monitoring crawl health, finding sitemap errors, checking if
+    new content was picked up, verifying sitemap submission.
 
     Args:
-        site_url: Exact GSC property URL from gsc_list_properties
+        site_url: Exact GSC property URL from gsc_list_properties.
+                  Format: 'https://example.com/' or 'sc-domain:example.com'.
     """
     try:
         service = gsc_client.get_service()

@@ -8,4 +8,4 @@ if [ -f "$DIR/.env" ]; then
   set +a
 fi
 
-exec "$DIR/.venv/bin/python" -m google_ads_mcp_reader
+exec "$DIR/.venv/bin/python" -m open_google_mcp

@@ -9,6 +9,14 @@ A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) ser
 | `list_accessible_customers` | — | Discover which Google Ads account IDs are accessible |
 | `get_resource_metadata` | `resource_name` | Explore selectable/filterable/sortable fields for a resource |
 | `search` | `customer_id`, `resource`, `fields`, `conditions?`, `orderings?`, `limit?` | Execute read-only GAQL queries |
+| `gsc_list_properties` | — | List all Google Search Console properties |
+| `gsc_get_site_details` | `site_url` | Get verification details for a GSC property |
+| `gsc_get_search_analytics` | `site_url`, `days?`, `dimensions?`, `row_limit?` | Top queries with clicks, impressions, CTR, position |
+| `gsc_get_performance_overview` | `site_url`, `days?` | Performance summary with daily trend |
+| `gsc_compare_search_periods` | `site_url`, `period1_start`, `period1_end`, `period2_start`, `period2_end` | Compare performance between two date ranges |
+| `gsc_get_advanced_search_analytics` | `site_url`, `start_date?`, `end_date?`, `dimensions?`, `search_type?`, `row_limit?`, `start_row?`, `sort_by?`, `sort_direction?`, `filters?` | Analytics with filtering, sorting, pagination |
+| `gsc_inspect_url` | `site_url`, `page_url` | Check crawl/index status of a URL |
+| `gsc_get_sitemaps` | `site_url` | List sitemaps with status and errors |
 
 ### Manager Account Auto-Routing
 
@@ -52,6 +60,22 @@ cp .env.example .env
 |--------|------------------|-------|
 | ADC (recommended) | `GOOGLE_ADS_DEVELOPER_TOKEN` | Run `gcloud auth application-default login` |
 | OAuth refresh token | `GOOGLE_ADS_DEVELOPER_TOKEN` + `GOOGLE_ADS_REFRESH_TOKEN` + `GOOGLE_ADS_CLIENT_ID` + `GOOGLE_ADS_CLIENT_SECRET` | For automated environments |
+
+**Google Search Console authentication** reuses your existing Google Ads OAuth
+credentials (`GOOGLE_ADS_CLIENT_ID` and `GOOGLE_ADS_CLIENT_SECRET`) — no
+additional environment variables needed.
+
+Make sure the [Search Console API](https://console.cloud.google.com/apis/library/searchconsole.googleapis.com)
+is enabled in your GCP project and the `.../auth/webmasters.readonly` scope is
+added to your [OAuth consent screen](https://console.cloud.google.com/apis/credentials/consent).
+
+On first use of any GSC tool, a browser window opens for you to authorize the
+GSC scope. The token is cached afterwards.
+
+| Alternative method | Env var | Notes |
+|-------------------|---------|-------|
+| Dedicated OAuth file | `GSC_OAUTH_CLIENT_SECRETS_FILE` | Path to a Desktop app client_secrets.json |
+| Service account | `GSC_CREDENTIALS_PATH` | For headless/automated environments |
 
 ### 3. Run
 
@@ -162,6 +186,77 @@ search(
   resource="customer_client",
   fields=["customer_client.id", "customer_client.descriptive_name", "customer_client.manager"]
 )
+```
+
+## Google Search Console — Usage Examples
+
+### List GSC properties
+
+```
+gsc_list_properties
+```
+
+### Get search analytics
+
+```
+gsc_get_search_analytics(
+  site_url="https://example.com",
+  days=28,
+  dimensions="query",
+  row_limit=10
+)
+```
+
+### Get performance overview
+
+```
+gsc_get_performance_overview(
+  site_url="https://example.com",
+  days=28
+)
+```
+
+### Compare two time periods
+
+```
+gsc_compare_search_periods(
+  site_url="https://example.com",
+  period1_start="2025-01-01",
+  period1_end="2025-01-31",
+  period2_start="2025-02-01",
+  period2_end="2025-02-28",
+  dimensions="query",
+  limit=10
+)
+```
+
+### Advanced analytics with filters
+
+```
+gsc_get_advanced_search_analytics(
+  site_url="https://example.com",
+  dimensions="query,device",
+  search_type="WEB",
+  row_limit=50,
+  sort_by="impressions",
+  sort_direction="descending",
+  filters='[{"dimension":"country","operator":"equals","expression":"usa"}]'
+)
+```
+
+### Inspect a URL
+
+```
+gsc_inspect_url(
+  site_url="https://example.com",
+  page_url="https://example.com/blog/post"
+)
+```
+
+### List sitemaps
+
+```
+gsc_get_sitemaps(site_url="https://example.com")
 ```
 
 ## GAQL Tips

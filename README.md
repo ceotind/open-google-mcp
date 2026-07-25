@@ -1,14 +1,21 @@
 # Open Google MCP
 
-A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for Google **Ads** (via GAQL) and **Search Console**. Designed for AI assistants and LLM agents to safely read campaign performance, search analytics, and more.
+A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for **Google Ads** (via GAQL), **Search Console**, and **Google Analytics 4**. Designed for AI assistants and LLM agents to safely read campaign performance, search analytics, website traffic, and more.
 
 ## Tools
+
+### Google Ads
 
 | Tool | Input | Description |
 |------|-------|-------------|
 | `list_accessible_customers` | — | Discover Google Ads account IDs |
 | `get_resource_metadata` | `resource_name` | Explore selectable/filterable/sortable fields for a resource |
 | `search` | `customer_id`, `resource`, `fields`, `conditions?`, `orderings?`, `limit?` | Execute read-only GAQL queries |
+
+### Google Search Console
+
+| Tool | Input | Description |
+|------|-------|-------------|
 | `gsc_get_capabilities` | — | Get categorized tool list with auth status |
 | `gsc_list_properties` | — | List all GSC properties (start here) |
 | `gsc_get_site_details` | `site_url` | Verification/ownership for a property |
@@ -18,6 +25,16 @@ A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) ser
 | `gsc_get_advanced_search_analytics` | `site_url`, `start_date?`, `end_date?`, `dimensions?`, `search_type?`, `row_limit?`, `start_row?`, `sort_by?`, `sort_direction?`, `filters?` | Filtered, sorted, paginated analytics |
 | `gsc_inspect_url` | `site_url`, `page_url` | Debug a URL's crawl/index status |
 | `gsc_get_sitemaps` | `site_url` | List sitemaps with status and errors |
+
+### Google Analytics 4
+
+| Tool | Input | Description |
+|------|-------|-------------|
+| `ga4_get_capabilities` | — | Get categorized tool list with auth status |
+| `ga4_list_properties` | — | Discover all accessible GA4 properties |
+| `ga4_get_metadata` | `property_id` | Browse available dimensions and metrics |
+| `ga4_run_report` | `property_id`, `dimensions?`, `metrics?`, `start_date?`, `end_date?`, `filters?`, `order_bys?`, `limit?` | Run a standard report with filtering and ordering |
+| `ga4_run_realtime_report` | `property_id`, `dimensions?`, `metrics?`, `limit?` | Get real-time data (last 30 minutes) |
 
 ### Manager Account Auto-Routing
 
@@ -29,12 +46,14 @@ If `search` targets a **manager (MCC) account** and finds no data directly, it a
 
 ## Setup
 
-### Prerequisites (both paths)
+### Prerequisites (all paths)
 
 - A Google Ads developer token (apply via Google Ads API Center)
-- Google Cloud service account with both APIs enabled:
+- Google Cloud service account with the following APIs enabled:
   - [Google Ads API](https://console.cloud.google.com/apis/library/googleads.googleapis.com)
   - [Search Console API](https://console.cloud.google.com/apis/library/searchconsole.googleapis.com)
+  - [Google Analytics Data API](https://console.cloud.google.com/apis/library/analyticsdata.googleapis.com)
+  - [Google Analytics Admin API](https://console.cloud.google.com/apis/library/analyticsadmin.googleapis.com)
 
 ---
 
@@ -49,7 +68,7 @@ cd open-google-mcp
 
 #### 2. Create and authorize a service account
 
-A single service account authenticates both Google Ads and Search Console.
+A single service account authenticates Google Ads, Search Console, and Google Analytics 4.
 
 1. Go to **GCP Console → APIs & Services → Credentials → Create Credentials → Service Account**
 2. Download the JSON key file, then copy these fields into `.env`:
@@ -62,6 +81,8 @@ A single service account authenticates both Google Ads and Search Console.
    (**Settings → Account access → Service account users**)
 4. **Search Console**: add the same email to your property
    (**Settings → Users and permissions → Add user**, grant Full access)
+5. **Google Analytics 4**: add the same email to your GA4 property
+   (**Admin → Account Access Management → Add user → Viewer**)
 
 #### 3. Configure `.env`
 
@@ -79,6 +100,7 @@ cp .env.example .env
 | `GOOGLE_SERVICE_ACCOUNT_CLIENT_ID` | Client ID |
 | `GOOGLE_SERVICE_ACCOUNT_PROJECT_ID` | GCP project ID |
 | `GOOGLE_ADS_LOGIN_CUSTOMER_ID` | Optional — for MCC account routing |
+| `GA4_CREDENTIALS_PATH` | Optional — dedicated GA4 credential file |
 
 #### 4. Build and run
 
@@ -88,8 +110,6 @@ docker compose run --rm open-google-mcp
 ```
 
 #### 5. MCP client config
-
-All configs point to the project directory (where `.env` lives):
 
 **Claude Desktop:**
 ```json
@@ -140,7 +160,7 @@ pip install -e .
 
 #### 2. Create and authorize a service account
 
-Same steps as Option A above — a single service account works for both Ads and GSC.
+Same steps as Option A above — a single service account works for Ads, GSC, and GA4.
 
 1. Go to **GCP Console → APIs & Services → Credentials → Create Credentials → Service Account**
 2. Download the JSON key file, then copy these fields into `.env`:
@@ -151,6 +171,7 @@ Same steps as Option A above — a single service account works for both Ads and
    - `GOOGLE_SERVICE_ACCOUNT_PROJECT_ID`
 3. **Google Ads**: add the service account email in your manager account
 4. **Search Console**: add the same email to your property with Full access
+5. **Google Analytics 4**: add the same email to your GA4 property with Viewer access
 
 #### 3. Configure `.env`
 
@@ -167,6 +188,7 @@ cp .env.example .env
 | `GOOGLE_SERVICE_ACCOUNT_CLIENT_ID` | Client ID |
 | `GOOGLE_SERVICE_ACCOUNT_PROJECT_ID` | GCP project ID |
 | `GOOGLE_ADS_LOGIN_CUSTOMER_ID` | Optional — for MCC account routing |
+| `GA4_CREDENTIALS_PATH` | Optional — dedicated GA4 credential file |
 
 #### 4. Run
 
@@ -176,32 +198,14 @@ source .env
 python -m open_google_mcp
 ```
 
+Or use the wrapper script (loads `.env` automatically):
+```bash
+./server.sh
+```
+
 #### 5. MCP client config
 
 **Claude Desktop:**
-```json
-{
-  "mcpServers": {
-    "open-google-mcp": {
-      "command": "uv",
-      "args": [
-        "--directory", "/path/to/open-google-mcp",
-        "run", "python", "-m", "open_google_mcp"
-      ],
-      "env": {
-        "GOOGLE_ADS_DEVELOPER_TOKEN": "your_token",
-        "GOOGLE_SERVICE_ACCOUNT_EMAIL": "your-sa@project.iam.gserviceaccount.com",
-        "GOOGLE_SERVICE_ACCOUNT_KEY": "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n",
-        "GOOGLE_SERVICE_ACCOUNT_KEY_ID": "your_key_id",
-        "GOOGLE_SERVICE_ACCOUNT_CLIENT_ID": "your_client_id",
-        "GOOGLE_SERVICE_ACCOUNT_PROJECT_ID": "your_project_id"
-      }
-    }
-  }
-}
-```
-
-Or use the wrapper script (loads `.env` automatically):
 ```json
 {
   "mcpServers": {
@@ -228,10 +232,11 @@ Or use the wrapper script (loads `.env` automatically):
 **Cursor:**
 - **Name**: `open-google-mcp`
 - **Type**: `command`
-- **Command**: `uv --directory /path/to/open-google-mcp run python -m open_google_mcp`
-- **Env vars**: All `GOOGLE_ADS_DEVELOPER_TOKEN` + `GOOGLE_SERVICE_ACCOUNT_*` variables
+- **Command**: `/path/to/open-google-mcp/server.sh`
 
-## Usage Examples
+---
+
+## Google Ads — Usage Examples
 
 ### List Ads accounts
 
@@ -270,6 +275,8 @@ search(
   fields=["customer_client.id", "customer_client.descriptive_name", "customer_client.manager"]
 )
 ```
+
+---
 
 ## Google Search Console — Usage Examples
 
@@ -341,6 +348,125 @@ gsc_inspect_url(
 ```
 gsc_get_sitemaps(site_url="https://example.com")
 ```
+
+---
+
+## Google Analytics 4 — Usage Examples
+
+### Start here — discover properties
+
+```
+ga4_list_properties
+```
+
+Returns your property ID (e.g. `123456789`) — use it in all other GA4 tools.
+
+### Browse available dimensions and metrics
+
+```
+ga4_get_metadata(property_id="123456789")
+```
+
+Returns 300+ dimensions and 100+ metrics available for reporting.
+
+### Run a basic report (property-level summary)
+
+```
+ga4_run_report(
+  property_id="123456789",
+  metrics="activeUsers,sessions,newUsers",
+  start_date="28daysAgo",
+  end_date="today"
+)
+```
+
+### Top countries by users
+
+```
+ga4_run_report(
+  property_id="123456789",
+  dimensions="country",
+  metrics="activeUsers",
+  start_date="28daysAgo",
+  end_date="today",
+  limit=10,
+  order_bys=[{"metric": "activeUsers", "desc": true}]
+)
+```
+
+### Top pages with views
+
+```
+ga4_run_report(
+  property_id="123456789",
+  dimensions="pagePath",
+  metrics="screenPageViews,activeUsers",
+  start_date="28daysAgo",
+  end_date="today",
+  limit=10,
+  order_bys=[{"metric": "screenPageViews", "desc": true}]
+)
+```
+
+### Traffic sources breakdown
+
+```
+ga4_run_report(
+  property_id="123456789",
+  dimensions="sessionDefaultChannelGrouping",
+  metrics="activeUsers,sessions",
+  start_date="28daysAgo",
+  end_date="today",
+  limit=10,
+  order_bys=[{"metric": "activeUsers", "desc": true}]
+)
+```
+
+### Filter by country (e.g. only Ireland)
+
+```
+ga4_run_report(
+  property_id="123456789",
+  dimensions="city",
+  metrics="activeUsers",
+  start_date="28daysAgo",
+  end_date="today",
+  filters={"field": "country", "type": "string_filter",
+           "value": "Ireland", "match_type": "EXACT"},
+  limit=10
+)
+```
+
+### Device breakdown
+
+```
+ga4_run_report(
+  property_id="123456789",
+  dimensions="deviceCategory",
+  metrics="activeUsers,sessions",
+  start_date="28daysAgo",
+  end_date="today"
+)
+```
+
+### Real-time report (last 30 minutes)
+
+```
+ga4_run_realtime_report(
+  property_id="123456789",
+  dimensions="country,deviceCategory",
+  metrics="activeUsers",
+  limit=10
+)
+```
+
+### Date formats
+
+You can use relative or absolute dates:
+- Relative: `today`, `yesterday`, `7daysAgo`, `28daysAgo`, `30daysAgo`
+- Absolute: `2026-01-01` (YYYY-MM-DD format)
+
+---
 
 ## GAQL Tips
 

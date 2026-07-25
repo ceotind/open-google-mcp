@@ -6,13 +6,24 @@ from datetime import datetime, timedelta
 from typing import Literal
 
 from google.ads.googleads.errors import GoogleAdsException
+from google.analytics.data_v1beta.types import (
+    DateRange,
+    Dimension,
+    Filter,
+    FilterExpression,
+    FilterExpressionList,
+    Metric,
+    OrderBy,
+    RunRealtimeReportRequest,
+    RunReportRequest,
+)
 from googleapiclient.errors import HttpError
 from google.protobuf.json_format import MessageToDict
 from mcp.server.fastmcp import FastMCP
 
 from . import client as ads_client
-from . import gsc_client
 from . import ga4_client
+from . import gsc_client
 
 mcp = FastMCP("Open Google MCP")
 
@@ -803,19 +814,6 @@ def _sum_submitted(contents: list) -> int:
 # Google Analytics 4 (GA4) tools
 # ---------------------------------------------------------------------------
 
-from google.analytics.data_v1beta.types import (
-    DateRange,
-    Dimension,
-    FilterExpression,
-    FilterExpressionList,
-    Filter,
-    Metric,
-    OrderBy,
-    RunReportRequest,
-    RunRealtimeReportRequest,
-)
-
-
 def _ga4_handle_error(context: str, e: Exception) -> dict:
     _log_exc(context)
     msg = f"{type(e).__name__}: {e}"
@@ -846,8 +844,8 @@ def _parse_metrics(metrics_str: str | None) -> list[Metric] | None:
     return [Metric(name=m.strip()) for m in metrics_str.split(",")]
 
 
-def _parse_filter_json(filter_json: str | None) -> FilterExpression | None:
-    """Parse a JSON filter string into a GA4 FilterExpression.
+def _parse_filter_json(filter_json: str | dict | list | None) -> FilterExpression | None:
+    """Parse a JSON filter string or object into a GA4 FilterExpression.
 
     Expected format:
       {"field": "dimensionName", "type": "string_filter", "value": "some_value",
@@ -858,7 +856,7 @@ def _parse_filter_json(filter_json: str | None) -> FilterExpression | None:
     if not filter_json:
         return None
     import json
-    filters_data = json.loads(filter_json)
+    filters_data = json.loads(filter_json) if isinstance(filter_json, str) else filter_json
     if isinstance(filters_data, dict):
         filters_data = [filters_data]
 
@@ -902,7 +900,7 @@ def _parse_filter_json(filter_json: str | None) -> FilterExpression | None:
     )
 
 
-def _parse_order_bys(order_json: str | None) -> list[OrderBy] | None:
+def _parse_order_bys(order_json: str | list | None) -> list[OrderBy] | None:
     """Parse JSON order-by config into OrderBy objects.
 
     Format: [{"metric": "metricName", "desc": true}, {"dimension": "dimName", "desc": false}]
@@ -986,7 +984,7 @@ def ga4_list_properties() -> dict:
     try:
         from google.analytics.admin_v1beta import AnalyticsAdminServiceClient
 
-        creds = ga4_client._load_service_account_creds()
+        creds = ga4_client.load_service_account_creds()
         if creds:
             admin_client = AnalyticsAdminServiceClient(credentials=creds)
         else:
@@ -1002,8 +1000,7 @@ def ga4_list_properties() -> dict:
                     "property_id": prop_id,
                     "display_name": prop.display_name,
                     "property": prop.property,
-                    "currency": prop.currency_code or "",
-                    "time_zone": prop.time_zone or "",
+                    "property_type": str(prop.property_type) if prop.property_type else "",
                 })
 
         return {
@@ -1059,8 +1056,8 @@ def ga4_run_report(
     metrics: str = "activeUsers",
     start_date: str = "28daysAgo",
     end_date: str = "today",
-    filters: str | None = None,
-    order_bys: str | None = None,
+    filters: str | dict | list | None = None,
+    order_bys: str | list | None = None,
     limit: int = 100,
 ) -> dict:
     """Run a standard GA4 report with dimensions, metrics, date range, and filters.

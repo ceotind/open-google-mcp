@@ -1,20 +1,21 @@
 [project]
 name = "open-google-mcp"
 version = "0.1.0"
-description = "Read-only MCP server for Google Ads (GAQL) and Search Console"
+description = "Read-only MCP server for Google Ads (GAQL), Search Console, and Google Analytics 4"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 authors = [
     { name = "Sharp Digital" },
 ]
-keywords = ["mcp", "google-ads", "search-console", "gsc", "gaql", "marketing"]
+keywords = ["mcp", "google-ads", "search-console", "gsc", "gaql", "ga4", "analytics", "marketing"]
 dependencies = [
     "mcp>=1.0.0",
     "google-ads>=25.0.0",
     "google-api-python-client>=2.0.0",
     "google-auth-oauthlib>=1.0.0",
     "google-analytics-data>=0.18.0",
+    "google-analytics-admin>=0.30.0",
     "platformdirs>=3.0.0",
 ]
 

@@ -13,7 +13,7 @@ def _expand_path(path: str | None) -> str | None:
     return os.path.expandvars(os.path.expanduser(path))
 
 
-def _load_service_account_creds() -> service_account.Credentials | None:
+def load_service_account_creds() -> service_account.Credentials | None:
     """Try to load service account credentials from env vars or file.
 
     Uses the same GOOGLE_SERVICE_ACCOUNT_* env vars as the other clients,
@@ -60,7 +60,7 @@ def get_client() -> BetaAnalyticsDataClient:
 
     Tries in order: service account (env vars) -> ADC (gcloud).
     """
-    creds = _load_service_account_creds()
+    creds = load_service_account_creds()
     if creds:
         return BetaAnalyticsDataClient(credentials=creds)
 

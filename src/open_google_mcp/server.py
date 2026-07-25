@@ -12,6 +12,7 @@ from mcp.server.fastmcp import FastMCP
 
 from . import client as ads_client
 from . import gsc_client
+from . import ga4_client
 
 mcp = FastMCP("Open Google MCP")
 
@@ -796,3 +797,416 @@ def _sum_submitted(contents: list) -> int:
             val = c.get("submitted", 0)
             total += int(val) if val else 0
     return total
+
+
+# ---------------------------------------------------------------------------
+# Google Analytics 4 (GA4) tools
+# ---------------------------------------------------------------------------
+
+from google.analytics.data_v1beta.types import (
+    DateRange,
+    Dimension,
+    FilterExpression,
+    FilterExpressionList,
+    Filter,
+    Metric,
+    OrderBy,
+    RunReportRequest,
+    RunRealtimeReportRequest,
+)
+
+
+def _ga4_handle_error(context: str, e: Exception) -> dict:
+    _log_exc(context)
+    msg = f"{type(e).__name__}: {e}"
+    if "PERMISSION_DENIED" in msg:
+        return {
+            "error": "Access denied. Add the service account email to your GA4 "
+                     "property (Admin → Account Access Management → Add user → Viewer)."
+        }
+    if "not found" in msg.lower() or "NOT_FOUND" in msg:
+        return {
+            "error": "Property not found. Check the property ID is correct and you "
+                     "have access. Use ga4_list_properties to discover your IDs."
+        }
+    return {"error": msg}
+
+
+def _parse_dimensions(dims_str: str | None) -> list[Dimension] | None:
+    """Parse comma-separated dimension names into Dimension objects."""
+    if not dims_str:
+        return None
+    return [Dimension(name=d.strip()) for d in dims_str.split(",")]
+
+
+def _parse_metrics(metrics_str: str | None) -> list[Metric] | None:
+    """Parse comma-separated metric names into Metric objects."""
+    if not metrics_str:
+        return None
+    return [Metric(name=m.strip()) for m in metrics_str.split(",")]
+
+
+def _parse_filter_json(filter_json: str | None) -> FilterExpression | None:
+    """Parse a JSON filter string into a GA4 FilterExpression.
+
+    Expected format:
+      {"field": "dimensionName", "type": "string_filter", "value": "some_value",
+       "match_type": "EXACT|CONTAINS|BEGINS_WITH|ENDS_WITH|NUMERIC_EQUAL|NUMERIC_GREATER_THAN|NUMERIC_LESS_THAN"}
+
+    Or an array of such filters (AND-combined).
+    """
+    if not filter_json:
+        return None
+    import json
+    filters_data = json.loads(filter_json)
+    if isinstance(filters_data, dict):
+        filters_data = [filters_data]
+
+    expressions = []
+    for f in filters_data:
+        field = f.get("field", "")
+        ftype = f.get("type", "string_filter")
+        value = f.get("value", "")
+        match_type = f.get("match_type", "EXACT")
+
+        if ftype == "string_filter":
+            expressions.append(
+                FilterExpression(
+                    filter=Filter(
+                        field_name=field,
+                        string_filter=Filter.StringFilter(
+                            match_type=match_type,
+                            value=value,
+                        ),
+                    )
+                )
+            )
+        elif ftype == "numeric_filter":
+            op = getattr(Filter.NumericFilter.Operation, match_type, Filter.NumericFilter.Operation.EQUAL)
+            expressions.append(
+                FilterExpression(
+                    filter=Filter(
+                        field_name=field,
+                        numeric_filter=Filter.NumericFilter(
+                            operation=op,
+                            value=Filter.NumericValue(int64_value=int(value)),
+                        ),
+                    )
+                )
+            )
+
+    if len(expressions) == 1:
+        return expressions[0]
+    return FilterExpression(
+        and_group=FilterExpressionList(expressions=expressions)
+    )
+
+
+def _parse_order_bys(order_json: str | None) -> list[OrderBy] | None:
+    """Parse JSON order-by config into OrderBy objects.
+
+    Format: [{"metric": "metricName", "desc": true}, {"dimension": "dimName", "desc": false}]
+    """
+    if not order_json:
+        return None
+    import json
+    orders = json.loads(order_json) if isinstance(order_json, str) else order_json
+    result = []
+    for o in orders:
+        if "metric" in o:
+            result.append(
+                OrderBy(
+                    metric=OrderBy.MetricOrderBy(metric_name=o["metric"]),
+                    desc=o.get("desc", True),
+                )
+            )
+        elif "dimension" in o:
+            result.append(
+                OrderBy(
+                    dimension=OrderBy.DimensionOrderBy(dimension_name=o["dimension"]),
+                    desc=o.get("desc", True),
+                )
+            )
+    return result or None
+
+
+def _ga4_rows_to_dicts(
+    response,
+    dim_names: list[str],
+    metric_names: list[str],
+) -> list[dict]:
+    """Convert GA4 API response rows to flat dicts."""
+    results = []
+    for row in response.rows:
+        item = {}
+        for i, dim_val in enumerate(row.dimension_values):
+            item[dim_names[i]] = dim_val.value
+        for i, met_val in enumerate(row.metric_values):
+            item[metric_names[i]] = met_val.value
+        results.append(item)
+    return results
+
+
+@mcp.tool()
+def ga4_get_capabilities() -> str:
+    """Get a categorized list of all available GA4 tools and authentication status.
+    Call this first to discover available tools and verify auth is working.
+    """
+    try:
+        ga4_client.get_client()
+        auth = "Connected"
+    except Exception as e:
+        auth = f"Not connected — {e}"
+
+    return (
+        "Google Analytics 4 (GA4) Tools\n\n"
+        f"Auth status: {auth}\n\n"
+        "Start with:  ga4_list_properties  (to discover your property IDs)\n\n"
+        "Discovery:\n"
+        "  ga4_list_properties    — List all accessible GA4 properties\n"
+        "  ga4_get_metadata       — Browse available dimensions and metrics\n\n"
+        "Reporting:\n"
+        "  ga4_run_report         — Full report with dimensions, metrics, filters\n"
+        "  ga4_run_realtime_report— Last 30 minutes of real-time data\n\n"
+        "Filters:\n"
+        '  JSON format: {"field": "dimensionName", "type": "string_filter",\n'
+        '                "value": "text", "match_type": "EXACT|CONTAINS|BEGINS_WITH"}\n'
+        "  Numeric filters: type=\"numeric_filter\", match_type=\"EQUAL|GREATER_THAN|LESS_THAN\"\n\n"
+        "Property IDs are numeric (e.g., '123456789') — discover them with ga4_list_properties."
+    )
+
+
+@mcp.tool()
+def ga4_list_properties() -> dict:
+    """**Start here** — Discover all GA4 properties the service account has access to.
+
+    Returns property IDs, display names, and currency/timezone info.
+    Use the numeric 'property_id' from the results in all other GA4 tools.
+    """
+    try:
+        from google.analytics.admin_v1beta import AnalyticsAdminServiceClient
+
+        creds = ga4_client._load_service_account_creds()
+        if creds:
+            admin_client = AnalyticsAdminServiceClient(credentials=creds)
+        else:
+            admin_client = AnalyticsAdminServiceClient()
+
+        account_summaries = admin_client.list_account_summaries()
+        properties = []
+        for summary in account_summaries:
+            for prop in summary.property_summaries:
+                # property name is "properties/123456789"
+                prop_id = prop.property.split("/")[-1] if prop.property else ""
+                properties.append({
+                    "property_id": prop_id,
+                    "display_name": prop.display_name,
+                    "property": prop.property,
+                    "currency": prop.currency_code or "",
+                    "time_zone": prop.time_zone or "",
+                })
+
+        return {
+            "count": len(properties),
+            "properties": properties,
+        }
+    except ImportError:
+        return {
+            "error": "Admin API library not installed. Install with: pip install google-analytics-admin",
+            "hint": "Set GA4_PROPERTY_ID in .env and use ga4_run_report directly.",
+        }
+    except Exception as e:
+        return _ga4_handle_error("ga4_list_properties", e)
+
+
+@mcp.tool()
+def ga4_get_metadata(property_id: str) -> dict:
+    """Discover available dimensions and metrics for a GA4 property.
+    **Use this before ga4_run_report** to find valid dimension/metric names.
+
+    Args:
+        property_id: Numeric GA4 property ID (e.g. '123456789').
+                     Discover with ga4_list_properties or find in your
+                     GA4 Admin → Property Settings → Property ID.
+    """
+    try:
+        client = ga4_client.get_client()
+        metadata = client.get_metadata(name=f"properties/{property_id}/metadata")
+
+        return {
+            "property_id": property_id,
+            "dimensions": [
+                {"api_name": d.api_name, "custom_definition": d.custom_definition,
+                 "category": d.category or ""}
+                for d in metadata.dimensions
+            ],
+            "metrics": [
+                {"api_name": m.api_name, "custom_definition": m.custom_definition,
+                 "category": m.category or ""}
+                for m in metadata.metrics
+            ],
+            "dimension_count": len(metadata.dimensions),
+            "metric_count": len(metadata.metrics),
+        }
+    except Exception as e:
+        return _ga4_handle_error("ga4_get_metadata", e)
+
+
+@mcp.tool()
+def ga4_run_report(
+    property_id: str,
+    dimensions: str = "",
+    metrics: str = "activeUsers",
+    start_date: str = "28daysAgo",
+    end_date: str = "today",
+    filters: str | None = None,
+    order_bys: str | None = None,
+    limit: int = 100,
+) -> dict:
+    """Run a standard GA4 report with dimensions, metrics, date range, and filters.
+
+    **Workflow:** ga4_list_properties() → ga4_get_metadata() → ga4_run_report()
+
+    Start with just metrics (no dimensions) for a quick property overview,
+    then add dimensions for deeper analysis.
+
+    Args:
+        property_id: Numeric GA4 property ID (e.g. '123456789').
+        dimensions: Comma-separated dimension names, e.g. 'city,country' or 'date,pagePath'.
+                    Omit or leave empty for a property-level summary.
+        metrics: Comma-separated metric names, e.g. 'activeUsers,sessions,newUsers'.
+                 Default: 'activeUsers'.
+        start_date: Start date in YYYY-MM-DD format, or relative like '7daysAgo',
+                    '28daysAgo', 'yesterday', 'today'.
+        end_date: End date in YYYY-MM-DD format, or relative like 'today'.
+        filters: Optional JSON filter. Format:
+                 {"field": "dimensionName", "type": "string_filter",
+                  "value": "text", "match_type": "EXACT|CONTAINS|BEGINS_WITH|ENDS_WITH"}
+                 Or array of filters (AND-combined).
+                 Numeric: type="numeric_filter", match_type="EQUAL|GREATER_THAN|LESS_THAN"
+        order_bys: Optional JSON ordering. Format:
+                   [{"metric": "metricName", "desc": true},
+                    {"dimension": "dimName", "desc": false}]
+        limit: Max rows to return (default: 100, max: 100000).
+
+    Examples:
+      # Top 10 cities by active users
+      property_id='123456789', dimensions='city', metrics='activeUsers',
+      limit=10, order_bys='[{"metric": "activeUsers", "desc": true}]'
+
+      # Traffic sources (channel groups)
+      property_id='123456789',
+      dimensions='sessionDefaultChannelGrouping',
+      metrics='activeUsers,sessions,newUsers',
+      start_date='2026-01-01'
+
+      # Page performance with device filter
+      property_id='123456789',
+      dimensions='pagePath,deviceCategory',
+      metrics='screenPageViews,engagementRate',
+      start_date='2026-01-01',
+      filters='{"field": "deviceCategory", "type": "string_filter",
+                "value": "mobile", "match_type": "CONTAINS"}'
+    """
+    try:
+        client = ga4_client.get_client()
+
+        dims = _parse_dimensions(dimensions) if dimensions else None
+        mets = _parse_metrics(metrics) if metrics else None
+        filter_expr = _parse_filter_json(filters)
+        order_list = _parse_order_bys(order_bys)
+
+        request = RunReportRequest(
+            property=f"properties/{property_id}",
+            dimensions=dims,
+            metrics=mets,
+            date_ranges=[DateRange(start_date=start_date, end_date=end_date)],
+            dimension_filter=filter_expr,
+            order_bys=order_list,
+            limit=min(limit, 100000),
+            return_property_quota=True,
+        )
+
+        response = client.run_report(request)
+
+        dim_names = [h.name for h in response.dimension_headers]
+        metric_names = [h.name for h in response.metric_headers]
+        rows = _ga4_rows_to_dicts(response, dim_names, metric_names)
+
+        # Metadata about quota
+        quota = {}
+        if response.property_quota:
+            q = response.property_quota
+            if q.tokens_per_day:
+                quota["tokens_per_day_remaining"] = q.tokens_per_day.remaining
+            if q.tokens_per_hour:
+                quota["tokens_per_hour_remaining"] = q.tokens_per_hour.remaining
+
+        return {
+            "property_id": property_id,
+            "date_range": {"start": start_date, "end": end_date},
+            "dimensions": dim_names,
+            "metrics": metric_names,
+            "row_count": len(rows),
+            "total_row_count": response.row_count if hasattr(response, "row_count") else len(rows),
+            "rows": rows,
+            "quota": quota if quota else None,
+        }
+    except Exception as e:
+        return _ga4_handle_error("ga4_run_report", e)
+
+
+@mcp.tool()
+def ga4_run_realtime_report(
+    property_id: str,
+    dimensions: str = "",
+    metrics: str = "activeUsers",
+    limit: int = 100,
+) -> dict:
+    """Get real-time data for the last 30 minutes from a GA4 property.
+
+    Useful for monitoring live traffic, testing event tracking, and
+    verifying setup.
+
+    Args:
+        property_id: Numeric GA4 property ID (e.g. '123456789').
+        dimensions: Comma-separated dimension names, e.g. 'city,country'.
+                    Available realtime dimensions: country, city, deviceCategory,
+                    eventName, pagePath, pageTitle, source, medium, etc.
+        metrics: Comma-separated metric names, e.g. 'activeUsers,eventCount'.
+                 Default: 'activeUsers'.
+        limit: Max rows to return (default: 100, max: 100000).
+
+    Example:
+      property_id='123456789', dimensions='country,deviceCategory',
+      metrics='activeUsers', limit=10
+    """
+    try:
+        client = ga4_client.get_client()
+
+        dims = _parse_dimensions(dimensions) if dimensions else None
+        mets = _parse_metrics(metrics) if metrics else None
+
+        request = RunRealtimeReportRequest(
+            property=f"properties/{property_id}",
+            dimensions=dims,
+            metrics=mets,
+            limit=min(limit, 100000),
+            return_property_quota=True,
+        )
+
+        response = client.run_realtime_report(request)
+
+        dim_names = [h.name for h in response.dimension_headers]
+        metric_names = [h.name for h in response.metric_headers]
+        rows = _ga4_rows_to_dicts(response, dim_names, metric_names)
+
+        return {
+            "property_id": property_id,
+            "dimensions": dim_names,
+            "metrics": metric_names,
+            "row_count": len(rows),
+            "rows": rows,
+        }
+    except Exception as e:
+        return _ga4_handle_error("ga4_run_realtime_report", e)

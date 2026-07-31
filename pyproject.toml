@@ -11,7 +11,7 @@ authors = [
 keywords = ["mcp", "google-ads", "search-console", "gsc", "gaql", "ga4", "analytics", "marketing"]
 dependencies = [
     "mcp>=1.0.0",
-    "google-ads>=25.0.0",
+    "google-ads>=31.0.0",
     "google-api-python-client>=2.0.0",
     "google-auth-oauthlib>=1.0.0",
     "google-analytics-data>=0.18.0",
@@ -32,3 +32,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0"]

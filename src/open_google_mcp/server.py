@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import traceback
 from collections.abc import Sequence
@@ -24,6 +25,7 @@ from mcp.server.fastmcp import FastMCP
 from . import client as ads_client
 from . import ga4_client
 from . import gsc_client
+from . import keyword_planner
 
 mcp = FastMCP("Open Google MCP")
 
@@ -1207,3 +1209,275 @@ def ga4_run_realtime_report(
         }
     except Exception as e:
         return _ga4_handle_error("ga4_run_realtime_report", e)
+
+
+# ---------------------------------------------------------------------------
+# Google Keyword Planner tools
+# ---------------------------------------------------------------------------
+
+def _kp_handle_error(context: str, e: Exception) -> dict:
+    _log_exc(context)
+    if isinstance(e, GoogleAdsException):
+        msg = _handle_google_ads_error(e)
+        low = msg.lower()
+        if "keyword_plan" in low or "keyword plan" in low or "permission" in low:
+            return {
+                "error": "Keyword Planner is not available for this account. "
+                         "The customer_id needs access to Keyword Planner "
+                         "(Tools → Planning → Keyword Planner in Google Ads). "
+                         "If this is a manager (MCC) account, run the query on "
+                         "a child customer ID instead. Details:\n" + msg,
+            }
+        return {"error": msg}
+    if isinstance(e, ValueError):
+        return {"error": str(e)}
+    return {"error": f"{type(e).__name__}: {e}"}
+
+
+def _resolve_customer_id(customer_id: str | None) -> str:
+    """Use the caller's customer_id, or fall back to env config.
+
+    Env fallbacks, in order: GOOGLE_ADS_DEFAULT_CUSTOMER_ID, then
+    GOOGLE_ADS_LOGIN_CUSTOMER_ID.
+    """
+    if customer_id:
+        return customer_id
+    env_id = (
+        os.environ.get("GOOGLE_ADS_DEFAULT_CUSTOMER_ID")
+        or os.environ.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID")
+        or ""
+    )
+    if env_id:
+        return env_id
+    raise ValueError(
+        "No customer_id provided. Pass one explicitly or set "
+        "GOOGLE_ADS_DEFAULT_CUSTOMER_ID (or GOOGLE_ADS_LOGIN_CUSTOMER_ID) "
+        "in .env"
+    )
+
+
+@mcp.tool()
+def generate_keyword_ideas(
+    customer_id: str | None = None,
+    keywords: Sequence[str] | None = None,
+    url: str | None = None,
+    geos: Sequence[str] | None = None,
+    language: str | None = None,
+    network: Literal["GOOGLE_SEARCH", "GOOGLE_SEARCH_AND_PARTNERS"] | None = None,
+    include_adult_keywords: bool = False,
+    page_size: int = 50,
+) -> dict:
+    """Generate Google Keyword Planner keyword ideas from seed terms or a URL.
+
+    **Use this for:** keyword research, expanding a seed list, finding
+    search-volume/competition/bid estimates for potential keywords.
+
+    Args:
+        customer_id: Numeric Google Ads customer ID with Keyword Planner
+                     access. Optional — falls back to
+                     GOOGLE_ADS_DEFAULT_CUSTOMER_ID, then
+                     GOOGLE_ADS_LOGIN_CUSTOMER_ID from .env.
+        keywords: Seed terms (e.g. ['salsa classes', 'salsa dancing']).
+        url: Alternative seed — a URL to extract ideas from.
+             Provide keywords, url, or both (both = keyword_and_url seed).
+        geos: Geo targeting, e.g. ['geoTargetConstants/2328'] (Ireland).
+              Find IDs with suggest_geo_target_constants. Omit = worldwide.
+        language: 'english' (default), any name in the built-in map, or a
+                  full resource name like 'languageConstants/1002'.
+        network: 'GOOGLE_SEARCH' or 'GOOGLE_SEARCH_AND_PARTNERS' (default).
+        include_adult_keywords: Whether to include adult ideas (default: False).
+        page_size: Max ideas to return (default: 50, max: 2000).
+
+    Returns each idea with avg_monthly_searches, competition (LOW/MEDIUM/HIGH),
+    competition_index (0-100), top-of-page bid range, avg CPC, concepts, and
+    close variants.
+    """
+    try:
+        cid = _resolve_customer_id(customer_id)
+        client = ads_client.get_client()
+        service = client.get_service("KeywordPlanIdeaService")
+        request = keyword_planner.build_ideas_request(
+            customer_id=cid,
+            keywords=keywords,
+            url=url,
+            geos=geos,
+            language=language,
+            network=network,
+            include_adult_keywords=include_adult_keywords,
+            page_size=page_size,
+        )
+        response = service.generate_keyword_ideas(request=request)
+        return {
+            "customer_id": cid,
+            "seed": {
+                "keywords": list(keywords or []),
+                "url": url,
+            },
+            "count": len(response.results),
+            "total_size": response.total_size,
+            "keywords": [
+                keyword_planner.flatten_idea_result(r) for r in response.results
+            ],
+        }
+    except Exception as e:
+        return _kp_handle_error("generate_keyword_ideas", e)
+
+
+@mcp.tool()
+def generate_keyword_historical_metrics(
+    customer_id: str | None = None,
+    keywords: Sequence[str] = (),
+    geos: Sequence[str] | None = None,
+    language: str | None = None,
+    network: Literal["GOOGLE_SEARCH", "GOOGLE_SEARCH_AND_PARTNERS"] | None = None,
+    include_adult_keywords: bool = False,
+) -> dict:
+    """Get historical search metrics for exact keywords (no expansion).
+
+    **Use this for:** validating a specific keyword list — real search
+    volume, competition level, and CPC bid ranges per keyword.
+
+    Args:
+        customer_id: Numeric Google Ads customer ID with Keyword Planner
+                     access. Optional — falls back to
+                     GOOGLE_ADS_DEFAULT_CUSTOMER_ID, then
+                     GOOGLE_ADS_LOGIN_CUSTOMER_ID from .env.
+        keywords: Exact keywords to look up (e.g. ['salsa classes dublin']).
+        geos: Geo targeting resource names (see generate_keyword_ideas).
+        language: Language name or resource name (default: 'english').
+        network: 'GOOGLE_SEARCH' or 'GOOGLE_SEARCH_AND_PARTNERS' (default).
+        include_adult_keywords: Include adult data (default: False).
+    """
+    try:
+        cid = _resolve_customer_id(customer_id)
+        client = ads_client.get_client()
+        service = client.get_service("KeywordPlanIdeaService")
+        request = keyword_planner.build_historical_request(
+            customer_id=cid,
+            keywords=keywords,
+            geos=geos,
+            language=language,
+            network=network,
+            include_adult_keywords=include_adult_keywords,
+        )
+        response = service.generate_keyword_historical_metrics(request=request)
+        return {
+            "customer_id": cid,
+            "count": len(response.results),
+            "keywords": [
+                keyword_planner.flatten_historical_result(r)
+                for r in response.results
+            ],
+        }
+    except Exception as e:
+        return _kp_handle_error("generate_keyword_historical_metrics", e)
+
+
+@mcp.tool()
+def generate_keyword_forecast_metrics(
+    customer_id: str | None = None,
+    keywords: Sequence[str] = (),
+    match_types: Sequence[str] | None = None,
+    currency_code: str = "EUR",
+    start_date: str | None = None,
+    end_date: str | None = None,
+    geos: Sequence[str] | None = None,
+    language: str | None = None,
+    daily_budget_micros: int | None = None,
+    max_cpc_bid_micros: int | None = None,
+) -> dict:
+    """Forecast impressions, clicks, CPC, and cost for a keyword list.
+
+    **Use this for:** pre-launch planning — what traffic/cost to expect
+    from a set of keywords over a date range. Simulated in-memory campaign
+    (one ad group, manual CPC bidding by default); nothing is created in
+    the Ads account.
+
+    Args:
+        customer_id: Numeric Google Ads customer ID with Keyword Planner
+                     access. Optional — falls back to
+                     GOOGLE_ADS_DEFAULT_CUSTOMER_ID, then
+                     GOOGLE_ADS_LOGIN_CUSTOMER_ID from .env.
+        keywords: Keywords to forecast.
+        match_types: 'EXACT' (default) for all, or one per keyword
+                     ('BROAD', 'PHRASE', 'EXACT').
+        currency_code: ISO 4217 code (default: 'EUR').
+        start_date: YYYY-MM-DD (default: tomorrow).
+        end_date: YYYY-MM-DD (default: 30 days from tomorrow).
+        geos: Geo targeting resource names (see generate_keyword_ideas).
+        language: Language name or resource name (default: 'english').
+        daily_budget_micros: Optional daily budget ($1 = 1000000).
+        max_cpc_bid_micros: Optional max CPC bid ($1 = 1000000).
+
+    Returns campaign-level impressions, clicks, CTR, avg CPC, and cost in
+    micros, plus per-ad-group breakdown when the API provides it.
+    """
+    try:
+        from datetime import timedelta
+
+        cid = _resolve_customer_id(customer_id)
+        today = datetime.now().date()
+        start = start_date or (today + timedelta(days=1)).isoformat()
+        end = end_date or (today + timedelta(days=31)).isoformat()
+
+        client = ads_client.get_client()
+        service = client.get_service("KeywordPlanIdeaService")
+        request = keyword_planner.build_forecast_request(
+            customer_id=cid,
+            keywords=keywords,
+            match_types=match_types,
+            currency_code=currency_code,
+            start_date=start,
+            end_date=end,
+            geos=geos,
+            language=language,
+            daily_budget_micros=daily_budget_micros,
+            max_cpc_bid_micros=max_cpc_bid_micros,
+        )
+        response = service.generate_keyword_forecast_metrics(request=request)
+        result = keyword_planner.flatten_forecast_response(response)
+        result.update({
+            "customer_id": cid,
+            "currency_code": currency_code,
+            "forecast_period": {"start": start, "end": end},
+            "keywords": list(keywords),
+        })
+        return result
+    except Exception as e:
+        return _kp_handle_error("generate_keyword_forecast_metrics", e)
+
+
+@mcp.tool()
+def suggest_geo_target_constants(
+    names: Sequence[str],
+    country_code: str | None = None,
+    locale: str = "en",
+) -> dict:
+    """Look up Google Ads geo target constants (for geos in other tools).
+
+    **Use this before generate_keyword_ideas/forecast when you need to
+    target a country/region** — returns resource names like
+    'geoTargetConstants/2328' (Ireland) to pass as geos.
+
+    Args:
+        names: Location names to search, e.g. ['Ireland', 'Dublin'].
+        country_code: Optional ISO-2 country code to narrow results
+                      (e.g. 'IE').
+        locale: Results language (default: 'en').
+    """
+    try:
+        client = ads_client.get_client()
+        service = client.get_service("GeoTargetConstantService")
+        request = client.get_type("SuggestGeoTargetConstantsRequest")
+        request.locale = locale
+        if country_code:
+            request.country_code = country_code
+        request.geo_targets.names.extend(names)
+        response = service.suggest_geo_target_constants(request=request)
+        return {
+            "searched": list(names),
+            "count": len(response.geo_target_constant_suggestions),
+            "suggestions": keyword_planner.flatten_geo_suggestions(response),
+        }
+    except Exception as e:
+        return _kp_handle_error("suggest_geo_target_constants", e)

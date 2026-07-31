@@ -38,6 +38,17 @@ A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) ser
 | `ga4_run_report` | `property_id`, `dimensions?`, `metrics?`, `start_date?`, `end_date?`, `filters?`, `order_bys?`, `limit?` | Run a standard report with filtering and ordering |
 | `ga4_run_realtime_report` | `property_id`, `dimensions?`, `metrics?`, `limit?` | Get real-time data (last 30 minutes) |
 
+### Google Keyword Planner
+
+| Tool | Input | Description |
+|------|-------|-------------|
+| `generate_keyword_ideas` | `customer_id?`, `keywords?`/`url?`, `geos?`, `language?`, `network?`, `page_size?` | Keyword ideas with search volume, competition, bid ranges |
+| `generate_keyword_historical_metrics` | `customer_id?`, `keywords`, `geos?`, `language?` | Historical metrics for exact keywords |
+| `generate_keyword_forecast_metrics` | `customer_id?`, `keywords`, `match_types?`, `currency_code?`, `start/end_date?`, `budget/bid?` | Simulated campaign forecast (impressions, clicks, CPC, cost) |
+| `suggest_geo_target_constants` | `names`, `country_code?`, `locale?` | Look up geo resource names (e.g. Ireland → `geoTargetConstants/2328`) |
+
+Keyword Planner tools reuse the same service account + developer token as the Ads tools. `customer_id` is optional — it falls back to `GOOGLE_ADS_DEFAULT_CUSTOMER_ID`, then `GOOGLE_ADS_LOGIN_CUSTOMER_ID` from `.env`. The account needs Keyword Planner access (Tools → Planning → Keyword Planner in Google Ads); manager (MCC) accounts usually don't have it — use a child customer ID.
+
 ### Manager Account Auto-Routing
 
 If `search` targets a **manager (MCC) account** and finds no data directly, it automatically:
@@ -102,6 +113,7 @@ cp .env.example .env
 | `GOOGLE_SERVICE_ACCOUNT_CLIENT_ID` | Client ID |
 | `GOOGLE_SERVICE_ACCOUNT_PROJECT_ID` | GCP project ID |
 | `GOOGLE_ADS_LOGIN_CUSTOMER_ID` | Optional — for MCC account routing |
+| `GOOGLE_ADS_DEFAULT_CUSTOMER_ID` | Optional — default customer_id for Keyword Planner tools (falls back to LOGIN_CUSTOMER_ID) |
 | `GA4_CREDENTIALS_PATH` | Optional — dedicated GA4 credential file |
 
 #### 4. Build and run
@@ -190,6 +202,7 @@ cp .env.example .env
 | `GOOGLE_SERVICE_ACCOUNT_CLIENT_ID` | Client ID |
 | `GOOGLE_SERVICE_ACCOUNT_PROJECT_ID` | GCP project ID |
 | `GOOGLE_ADS_LOGIN_CUSTOMER_ID` | Optional — for MCC account routing |
+| `GOOGLE_ADS_DEFAULT_CUSTOMER_ID` | Optional — default customer_id for Keyword Planner tools (falls back to LOGIN_CUSTOMER_ID) |
 | `GA4_CREDENTIALS_PATH` | Optional — dedicated GA4 credential file |
 
 #### 4. Run
@@ -467,6 +480,49 @@ ga4_run_realtime_report(
 You can use relative or absolute dates:
 - Relative: `today`, `yesterday`, `7daysAgo`, `28daysAgo`, `30daysAgo`
 - Absolute: `2026-01-01` (YYYY-MM-DD format)
+
+---
+
+## Google Keyword Planner — Usage Examples
+
+`customer_id` is optional everywhere — set `GOOGLE_ADS_DEFAULT_CUSTOMER_ID` in `.env` and omit it in calls.
+
+### Keyword ideas for a seed term
+
+```text
+generate_keyword_ideas(
+  keywords=["salsa classes dublin", "salsa dancing"],
+  geos=["geoTargetConstants/2328"],   # Ireland — find via suggest_geo_target_constants
+  language="english"
+)
+```
+
+### Historical metrics for exact keywords
+
+```text
+generate_keyword_historical_metrics(
+  keywords=["salsa classes dublin", "bachata classes dublin"],
+  geos=["geoTargetConstants/2328"]
+)
+```
+
+### Forecast a campaign for next month
+
+```text
+generate_keyword_forecast_metrics(
+  keywords=["salsa classes dublin", "salsa dancing"],
+  match_types=["PHRASE", "EXACT"],
+  currency_code="EUR",
+  daily_budget_micros=20000000,   # €20/day
+  max_cpc_bid_micros=500000       # €0.50 max CPC
+)
+```
+
+### Find a geo constant
+
+```text
+suggest_geo_target_constants(names=["Ireland"], country_code="IE")
+```
 
 ---
 

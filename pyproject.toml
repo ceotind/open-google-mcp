@@ -10,7 +10,7 @@ authors = [
 ]
 keywords = ["mcp", "google-ads", "search-console", "gsc", "gaql", "ga4", "analytics", "marketing"]
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp>=1.28.1,<2.0.0",
     "google-ads>=31.0.0",
     "google-api-python-client>=2.0.0",
     "google-auth-oauthlib>=1.0.0",

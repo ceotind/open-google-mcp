@@ -24,6 +24,7 @@ from google.ads.googleads.v25.enums.types.keyword_plan_network import (
     KeywordPlanNetworkEnum,
 )
 from google.ads.googleads.v25.services.types import (
+    geo_target_constant_service as gtc,
     keyword_plan_idea_service as kp,
 )
 
@@ -183,6 +184,28 @@ def build_forecast_request(
     )
 
 
+def build_geo_suggest_request(
+    names: Sequence[str],
+    country_code: str | None,
+    locale: str,
+) -> gtc.SuggestGeoTargetConstantsRequest:
+    """Build a SuggestGeoTargetConstantsRequest to search by location names.
+
+    NOTE: location_names is a oneof message field — in proto-plus it must be
+    assigned as a whole (unset oneof members read as None, so
+    request.location_names.names.extend(...) raises AttributeError).
+    """
+    request = gtc.SuggestGeoTargetConstantsRequest(
+        locale=locale,
+        location_names=gtc.SuggestGeoTargetConstantsRequest.LocationNames(
+            names=list(names),
+        ),
+    )
+    if country_code:
+        request.country_code = country_code
+    return request
+
+
 def _enum_name(value) -> str | None:
     return value.name if value else None
 
@@ -275,9 +298,6 @@ def flatten_geo_suggestions(response) -> list[dict]:
             "name": g.name,
             "country_code": g.country_code,
             "target_type": g.target_type,
-            "parents": [
-                p.display_name if hasattr(p, "display_name") else str(p)
-                for p in (s.geo_target_constant_parents or [])
-            ],
+            "parents": [p.name for p in (s.geo_target_constant_parents or [])],
         })
     return out

@@ -1219,6 +1219,16 @@ def _kp_handle_error(context: str, e: Exception) -> dict:
     _log_exc(context)
     if isinstance(e, GoogleAdsException):
         msg = _handle_google_ads_error(e)
+        for error in e.failure.errors:
+            auth_err = error.error_code.authorization_error
+            if auth_err and auth_err.name == "DEVELOPER_TOKEN_NOT_APPROVED":
+                return {
+                    "error": "The Google Ads developer token is not approved for "
+                             "Keyword Planner. Explorer-level tokens cannot call "
+                             "Keyword Planner services — apply for basic or "
+                             "standard access: ads.google.com → Tools → API "
+                             "Center → Request higher access.",
+                }
         low = msg.lower()
         if "keyword_plan" in low or "keyword plan" in low or "permission" in low:
             return {
@@ -1468,11 +1478,11 @@ def suggest_geo_target_constants(
     try:
         client = ads_client.get_client()
         service = client.get_service("GeoTargetConstantService")
-        request = client.get_type("SuggestGeoTargetConstantsRequest")
-        request.locale = locale
-        if country_code:
-            request.country_code = country_code
-        request.geo_targets.names.extend(names)
+        request = keyword_planner.build_geo_suggest_request(
+            names=names,
+            country_code=country_code,
+            locale=locale,
+        )
         response = service.suggest_geo_target_constants(request=request)
         return {
             "searched": list(names),

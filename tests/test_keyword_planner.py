@@ -20,6 +20,7 @@ from google.ads.googleads.v25.services.types.keyword_plan_idea_service import (
 from open_google_mcp.keyword_planner import (
     LANGUAGE_CONSTANTS,
     build_forecast_request,
+    build_geo_suggest_request,
     build_historical_request,
     build_ideas_request,
     build_keyword_seed,
@@ -185,6 +186,23 @@ def test_forecast_request_single_match_type_applies_to_all():
     assert all(
         k == KeywordMatchTypeEnum.KeywordMatchType.BROAD for k in kinds
     )
+
+
+# --- geo suggest request ---------------------------------------------------
+
+def test_geo_suggest_request_basic():
+    req = build_geo_suggest_request(
+        names=["Ireland", "Dublin"], country_code="IE", locale="en",
+    )
+    assert req.locale == "en"
+    assert req.country_code == "IE"
+    assert req._pb.WhichOneof("query") == "location_names"
+    assert list(req.location_names.names) == ["Ireland", "Dublin"]
+
+
+def test_geo_suggest_request_without_country():
+    req = build_geo_suggest_request(names=["Ireland"], country_code=None, locale="en")
+    assert req.country_code == ""
 
 
 # --- flatteners ------------------------------------------------------------

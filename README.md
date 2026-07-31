@@ -45,9 +45,9 @@ A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) ser
 | `generate_keyword_ideas` | `customer_id?`, `keywords?`/`url?`, `geos?`, `language?`, `network?`, `page_size?` | Keyword ideas with search volume, competition, bid ranges |
 | `generate_keyword_historical_metrics` | `customer_id?`, `keywords`, `geos?`, `language?` | Historical metrics for exact keywords |
 | `generate_keyword_forecast_metrics` | `customer_id?`, `keywords`, `match_types?`, `currency_code?`, `start/end_date?`, `budget/bid?` | Simulated campaign forecast (impressions, clicks, CPC, cost) |
-| `suggest_geo_target_constants` | `names`, `country_code?`, `locale?` | Look up geo resource names (e.g. Ireland → `geoTargetConstants/2328`) |
+| `suggest_geo_target_constants` | `names`, `country_code?`, `locale?` | Look up geo resource names (e.g. Ireland → `geoTargetConstants/2372`) |
 
-Keyword Planner tools reuse the same service account + developer token as the Ads tools. `customer_id` is optional — it falls back to `GOOGLE_ADS_DEFAULT_CUSTOMER_ID`, then `GOOGLE_ADS_LOGIN_CUSTOMER_ID` from `.env`. The account needs Keyword Planner access (Tools → Planning → Keyword Planner in Google Ads); manager (MCC) accounts usually don't have it — use a child customer ID.
+Keyword Planner tools reuse the same service account + developer token as the Ads tools. `customer_id` is optional — it falls back to `GOOGLE_ADS_DEFAULT_CUSTOMER_ID`, then `GOOGLE_ADS_LOGIN_CUSTOMER_ID` from `.env`. The account needs Keyword Planner access (Tools → Planning → Keyword Planner in Google Ads); manager (MCC) accounts usually don't have it — use a child customer ID. **The developer token must have at least basic access** (explorer-level tokens are rejected: "apply for basic or standard access" — ads.google.com → Tools → API Center → Request higher access).
 
 ### Manager Account Auto-Routing
 
@@ -492,7 +492,7 @@ You can use relative or absolute dates:
 ```text
 generate_keyword_ideas(
   keywords=["salsa classes dublin", "salsa dancing"],
-  geos=["geoTargetConstants/2328"],   # Ireland — find via suggest_geo_target_constants
+  geos=["geoTargetConstants/2372"],   # Ireland — find via suggest_geo_target_constants
   language="english"
 )
 ```
@@ -502,7 +502,7 @@ generate_keyword_ideas(
 ```text
 generate_keyword_historical_metrics(
   keywords=["salsa classes dublin", "bachata classes dublin"],
-  geos=["geoTargetConstants/2328"]
+  geos=["geoTargetConstants/2372"]
 )
 ```
 

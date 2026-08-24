@@ -116,12 +116,18 @@ cp .env.example .env
 | `GOOGLE_ADS_DEFAULT_CUSTOMER_ID` | Optional — default customer_id for Keyword Planner tools (falls back to LOGIN_CUSTOMER_ID) |
 | `GA4_CREDENTIALS_PATH` | Optional — dedicated GA4 credential file |
 
-#### 4. Build and run
+#### 4. Build and start the container (once)
 
 ```bash
 docker compose build
-docker compose run --rm open-google-mcp
+docker compose up -d open-google-mcp
 ```
+
+> This starts a single long-lived container. Client configs attach to it with
+> `docker compose exec` instead of `docker compose run`, so a new container is
+> **not** created every session. (Don't use `docker compose run` for a client —
+> it spawns a new container each launch and `--rm` never removes a long-running
+> stdio server, so containers pile up.)
 
 #### 5. MCP client config
 
@@ -131,7 +137,7 @@ docker compose run --rm open-google-mcp
   "mcpServers": {
     "open-google-mcp": {
       "command": "docker",
-      "args": ["compose", "run", "--rm", "open-google-mcp"],
+      "args": ["compose", "exec", "-T", "open-google-mcp", "python", "-m", "open_google_mcp"],
       "workdir": "/path/to/open-google-mcp"
     }
   }
@@ -144,7 +150,7 @@ docker compose run --rm open-google-mcp
   "mcp": {
     "open-google-mcp": {
       "type": "local",
-      "command": ["docker", "compose", "run", "--rm", "open-google-mcp"],
+      "command": ["docker", "compose", "exec", "-T", "open-google-mcp", "python", "-m", "open_google_mcp"],
       "workdir": "/path/to/open-google-mcp",
       "enabled": true
     }
@@ -155,7 +161,7 @@ docker compose run --rm open-google-mcp
 **Cursor:**
 - **Name**: `open-google-mcp`
 - **Type**: `command`
-- **Command**: `docker compose run --rm open-google-mcp`
+- **Command**: `docker compose exec -T open-google-mcp python -m open_google_mcp`
 - **Working directory**: `/path/to/open-google-mcp`
 
 ---
@@ -534,6 +540,20 @@ suggest_geo_target_constants(names=["Ireland"], country_code="IE")
 - For `change_event` resource, limit must be ≤ 10000
 - Conditions are AND-combined
 - Use `get_resource_metadata` first to discover valid fields
+
+## Development
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+pytest          # unit tests — no network or credentials required
+```
+
+The Keyword Planner logic lives in `src/open_google_mcp/keyword_planner.py` (pure request builders and result flatteners, fully unit-tested). A live smoke test against the real API is available:
+
+```bash
+source .env && python scripts/smoke_keyword_planner.py [customer_id]
+```
 
 ## License
 

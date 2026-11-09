@@ -22,6 +22,7 @@ from googleapiclient.errors import HttpError
 from google.protobuf.json_format import MessageToDict
 from mcp.server.fastmcp import FastMCP
 
+from . import bing_client
 from . import client as ads_client
 from . import ga4_client
 from . import gsc_client
@@ -1491,3 +1492,456 @@ def suggest_geo_target_constants(
         }
     except Exception as e:
         return _kp_handle_error("suggest_geo_target_constants", e)
+
+
+# ---------------------------------------------------------------------------
+# Bing Webmaster Tools (read-only)
+# ---------------------------------------------------------------------------
+
+def _bing_handle_error(context: str, e: Exception) -> dict:
+    _log_exc(context)
+    if isinstance(e, bing_client.BingAPIError):
+        return {"error": str(e)}
+    if isinstance(e, ValueError):
+        return {"error": str(e)}
+    return {"error": f"{type(e).__name__}: {e}"}
+
+
+def _bing_daily_rows(rows: list[dict], days: int | None) -> list[dict]:
+    """Sort daily rows by date and keep the last N days when asked."""
+    ordered = sorted(
+        rows,
+        key=lambda row: str(row.get("date", "")),
+    )
+    if days is None:
+        return ordered
+    cutoff = datetime.now().date() - timedelta(days=days)
+    kept = []
+    for row in ordered:
+        raw = str(row.get("date", ""))
+        try:
+            row_date = datetime.fromisoformat(raw).date()
+        except ValueError:
+            kept.append(row)
+            continue
+        if row_date >= cutoff:
+            kept.append(row)
+    return kept
+
+
+@mcp.tool()
+def bing_get_capabilities() -> str:
+    """Get the Bing Webmaster tool list and authentication status.
+    Call this first if Bing calls fail or you are unsure what is available.
+    """
+    if not bing_client.is_configured():
+        auth = (
+            "Not connected - BING_WEBMASTER_API_KEY is not set. "
+            "Get a key from Bing Webmaster Tools -> Settings -> API Access."
+        )
+    else:
+        try:
+            sites = bing_client.list_sites()
+            auth = f"Connected - {len(sites)} site(s) available"
+        except Exception as e:
+            auth = f"Not connected - {e}"
+
+    return (
+        "Bing Webmaster Tools\n\n"
+        f"Auth status: {auth}\n\n"
+        "Start with:  bing_list_sites  (to get exact site_url values)\n\n"
+        "Discovery:\n"
+        "  bing_list_sites          - List verified sites (always start here)\n"
+        "  bing_get_url_info        - Crawl and index details for one URL\n\n"
+        "Analytics:\n"
+        "  bing_get_query_stats     - Top queries with clicks and impressions\n"
+        "  bing_get_page_stats      - Top pages with clicks and impressions\n"
+        "  bing_get_traffic_stats   - Daily clicks and impressions trend\n"
+        "  bing_get_query_pages     - Pages ranking for one query\n"
+        "  bing_get_page_queries    - Queries a page ranks for\n\n"
+        "Indexing:\n"
+        "  bing_get_crawl_stats     - Crawl volume and response codes\n"
+        "  bing_get_crawl_issues    - Indexing problems\n"
+        "  bing_get_sitemaps        - Submitted sitemaps and feeds\n\n"
+        "Links:\n"
+        "  bing_get_link_counts     - Inbound link counts per page\n\n"
+        "Keywords:\n"
+        "  bing_keyword_stats       - Historical keyword data\n"
+        "  bing_get_related_keywords- Related keyword discovery\n\n"
+        "Cross-engine:\n"
+        "  seo_compare_google_bing  - Join Google and Bing top queries\n\n"
+        "Bing query and page data updates weekly. Traffic data updates daily."
+    )
+
+
+@mcp.tool()
+def bing_list_sites() -> dict:
+    """**Start here** - List all sites verified in Bing Webmaster Tools.
+
+    Returns the exact site_url strings needed by every other Bing tool.
+    Always call this first.
+    """
+    try:
+        sites = bing_client.list_sites()
+        # Drop verification secrets. They are not needed for analytics.
+        hidden = {"authentication_code", "dns_verification_code"}
+        safe_sites = [
+            {key: value for key, value in site.items() if key not in hidden}
+            for site in sites
+        ]
+        return {
+            "count": len(safe_sites),
+            "sites": safe_sites,
+        }
+    except Exception as e:
+        return _bing_handle_error("bing_list_sites", e)
+
+
+@mcp.tool()
+def bing_get_query_stats(site_url: str, limit: int = 100) -> dict:
+    """Get top search queries with clicks, impressions, and average positions.
+    **Use this for:** finding which queries drive Bing traffic.
+    Bing refreshes this data weekly. There is no date-range filter.
+
+    Args:
+        site_url: Exact site URL from bing_list_sites.
+        limit: Max rows to return (default: 100).
+    """
+    try:
+        rows = bing_client.get_query_stats(site_url)
+        return {
+            "site_url": site_url,
+            "row_count": len(rows),
+            "returned": len(rows[: max(1, limit)]),
+            "queries": rows[: max(1, limit)],
+            "note": "Bing updates query stats weekly. Rows are Bing top queries.",
+        }
+    except Exception as e:
+        return _bing_handle_error("bing_get_query_stats", e)
+
+
+@mcp.tool()
+def bing_get_page_stats(site_url: str, limit: int = 100) -> dict:
+    """Get top pages with clicks, impressions, and average positions.
+    **Use this for:** finding which pages get Bing traffic.
+    Bing refreshes this data weekly. There is no date-range filter.
+
+    Args:
+        site_url: Exact site URL from bing_list_sites.
+        limit: Max rows to return (default: 100).
+    """
+    try:
+        rows = bing_client.get_page_stats(site_url)
+        return {
+            "site_url": site_url,
+            "row_count": len(rows),
+            "returned": len(rows[: max(1, limit)]),
+            "pages": rows[: max(1, limit)],
+            "note": "Bing updates page stats weekly. Rows are Bing top pages.",
+        }
+    except Exception as e:
+        return _bing_handle_error("bing_get_page_stats", e)
+
+
+@mcp.tool()
+def bing_get_traffic_stats(site_url: str, days: int | None = None) -> dict:
+    """Get daily clicks and impressions with totals.
+    **Use this for:** Bing traffic trends, spikes, and drops.
+    This is the only Bing report with a real daily time series.
+
+    Args:
+        site_url: Exact site URL from bing_list_sites.
+        days: Keep only the last N days (optional). Omit for the full series.
+    """
+    try:
+        rows = _bing_daily_rows(bing_client.get_rank_and_traffic_stats(site_url), days)
+        total_clicks = sum(int(row.get("clicks", 0) or 0) for row in rows)
+        total_impressions = sum(int(row.get("impressions", 0) or 0) for row in rows)
+        return {
+            "site_url": site_url,
+            "days": days,
+            "row_count": len(rows),
+            "totals": {
+                "clicks": total_clicks,
+                "impressions": total_impressions,
+            },
+            "daily": rows,
+        }
+    except Exception as e:
+        return _bing_handle_error("bing_get_traffic_stats", e)
+
+
+@mcp.tool()
+def bing_get_query_pages(site_url: str, query: str, limit: int = 100) -> dict:
+    """Get the pages that rank for one query.
+    **Use this for:** checking which URL Bing shows for a keyword.
+
+    Args:
+        site_url: Exact site URL from bing_list_sites.
+        query: The search query to look up.
+        limit: Max rows to return (default: 100).
+    """
+    try:
+        rows = bing_client.get_query_pages(site_url, query)
+        return {
+            "site_url": site_url,
+            "query": query,
+            "row_count": len(rows),
+            "returned": len(rows[: max(1, limit)]),
+            "pages": rows[: max(1, limit)],
+        }
+    except Exception as e:
+        return _bing_handle_error("bing_get_query_pages", e)
+
+
+@mcp.tool()
+def bing_get_page_queries(site_url: str, page: str, limit: int = 100) -> dict:
+    """Get the queries that one page ranks for.
+    **Use this for:** keyword mapping and on-page optimization.
+
+    Args:
+        site_url: Exact site URL from bing_list_sites.
+        page: The page URL to look up.
+        limit: Max rows to return (default: 100).
+    """
+    try:
+        rows = bing_client.get_page_queries(site_url, page)
+        return {
+            "site_url": site_url,
+            "page": page,
+            "row_count": len(rows),
+            "returned": len(rows[: max(1, limit)]),
+            "queries": rows[: max(1, limit)],
+        }
+    except Exception as e:
+        return _bing_handle_error("bing_get_page_queries", e)
+
+
+@mcp.tool()
+def bing_get_url_info(site_url: str, url: str) -> dict:
+    """Get crawl and index details for one URL.
+    **Use this for:** checking HTTP status, last crawl date, and link counts.
+    Use the 'domain:example.com' form to inspect a whole domain.
+
+    Args:
+        site_url: Exact site URL from bing_list_sites.
+        url: The URL to inspect.
+    """
+    try:
+        info = bing_client.get_url_info(site_url, url)
+        return {
+            "site_url": site_url,
+            "url": url,
+            **info,
+        }
+    except Exception as e:
+        return _bing_handle_error("bing_get_url_info", e)
+
+
+@mcp.tool()
+def bing_get_crawl_stats(site_url: str) -> dict:
+    """Get crawl statistics for a site.
+    **Use this for:** crawl volume, response codes, and indexing health.
+
+    Args:
+        site_url: Exact site URL from bing_list_sites.
+    """
+    try:
+        stats = bing_client.get_crawl_stats(site_url)
+        return {
+            "site_url": site_url,
+            "stats": stats,
+        }
+    except Exception as e:
+        return _bing_handle_error("bing_get_crawl_stats", e)
+
+
+@mcp.tool()
+def bing_get_crawl_issues(site_url: str, limit: int = 100) -> dict:
+    """List crawl issues found by Bing.
+    **Use this for:** finding blocked pages, errors, and indexing problems.
+
+    Args:
+        site_url: Exact site URL from bing_list_sites.
+        limit: Max rows to return (default: 100).
+    """
+    try:
+        rows = bing_client.get_crawl_issues(site_url)
+        return {
+            "site_url": site_url,
+            "row_count": len(rows),
+            "returned": len(rows[: max(1, limit)]),
+            "issues": rows[: max(1, limit)],
+        }
+    except Exception as e:
+        return _bing_handle_error("bing_get_crawl_issues", e)
+
+
+@mcp.tool()
+def bing_get_link_counts(site_url: str, page: int = 0) -> dict:
+    """Get inbound link counts for site pages.
+    **Use this for:** finding pages with the most backlinks.
+
+    Args:
+        site_url: Exact site URL from bing_list_sites.
+        page: Result page number, starting at 0 (default: 0).
+    """
+    try:
+        data = bing_client.get_link_counts(site_url, page)
+        return {
+            "site_url": site_url,
+            "page": page,
+            "links": data,
+        }
+    except Exception as e:
+        return _bing_handle_error("bing_get_link_counts", e)
+
+
+@mcp.tool()
+def bing_get_sitemaps(site_url: str) -> dict:
+    """List submitted sitemaps and feeds with their status.
+    **Use this for:** checking sitemap submission and crawl pickup.
+
+    Args:
+        site_url: Exact site URL from bing_list_sites.
+    """
+    try:
+        feeds = bing_client.get_feeds(site_url)
+        return {
+            "site_url": site_url,
+            "count": len(feeds),
+            "sitemaps": feeds,
+        }
+    except Exception as e:
+        return _bing_handle_error("bing_get_sitemaps", e)
+
+
+@mcp.tool()
+def bing_keyword_stats(
+    query: str,
+    country: str = "us",
+    language: str = "en-US",
+) -> dict:
+    """Get historical keyword statistics from Bing.
+    **Use this for:** validating a keyword with Bing search data.
+
+    Args:
+        query: The keyword to look up.
+        country: Two-letter market code (default: 'us').
+        language: IETF language tag, for example 'en-US' or 'en-IE'
+                  (default: 'en-US'). A bare code like 'en' gets the country
+                  added automatically.
+    """
+    try:
+        rows = bing_client.get_keyword_stats(query, country, language)
+        return {
+            "query": query,
+            "country": country,
+            "language": language,
+            "row_count": len(rows),
+            "stats": rows,
+        }
+    except Exception as e:
+        return _bing_handle_error("bing_keyword_stats", e)
+
+
+@mcp.tool()
+def bing_get_related_keywords(
+    query: str,
+    country: str = "us",
+    language: str = "en-US",
+    start_date: str | None = None,
+    end_date: str | None = None,
+    limit: int = 100,
+) -> dict:
+    """Get related keywords for a seed term from Bing.
+    **Use this for:** keyword discovery and topic expansion.
+
+    Args:
+        query: Seed keyword.
+        country: Two-letter market code (default: 'us').
+        language: IETF language tag, for example 'en-US' or 'en-IE'
+                  (default: 'en-US'). A bare code like 'en' gets the country
+                  added automatically.
+        start_date: ISO date (YYYY-MM-DD). Default: 30 days ago.
+        end_date: ISO date (YYYY-MM-DD). Default: today.
+        limit: Max rows to return (default: 100).
+    """
+    try:
+        today = datetime.now().date()
+        end = end_date or today.isoformat()
+        start = start_date or (today - timedelta(days=30)).isoformat()
+        rows = bing_client.get_related_keywords(
+            query, country, language, start, end
+        )
+        return {
+            "query": query,
+            "country": country,
+            "language": language,
+            "period": {"start": start, "end": end},
+            "row_count": len(rows),
+            "returned": len(rows[: max(1, limit)]),
+            "keywords": rows[: max(1, limit)],
+            "note": "Bing may return an empty list for low-volume terms.",
+        }
+    except Exception as e:
+        return _bing_handle_error("bing_get_related_keywords", e)
+
+
+@mcp.tool()
+def seo_compare_google_bing(
+    bing_site_url: str,
+    gsc_site_url: str,
+    days: int = 28,
+    limit: int = 25,
+) -> dict:
+    """Compare top search queries between Bing and Google Search Console.
+    **Use this for:** finding engines where a query over- or under-performs.
+    Google uses the last N days. Bing uses its weekly top-query snapshot.
+
+    Args:
+        bing_site_url: Exact Bing site URL from bing_list_sites.
+        gsc_site_url: Exact GSC property URL from gsc_list_properties.
+        days: Google lookback window in days (default: 28).
+        limit: Max rows per section (default: 25).
+    """
+    try:
+        bing_rows = bing_client.get_query_stats(bing_site_url)
+
+        service = gsc_client.get_service()
+        end_date = datetime.now().date()
+        start_date = end_date - timedelta(days=days)
+        body = {
+            "startDate": start_date.strftime("%Y-%m-%d"),
+            "endDate": end_date.strftime("%Y-%m-%d"),
+            "dimensions": ["query"],
+            "rowLimit": 1000,
+        }
+        response = (
+            service.searchanalytics()
+            .query(siteUrl=gsc_site_url, body=body)
+            .execute()
+        )
+        gsc_rows = [
+            {
+                "query": row.get("keys", [""])[0],
+                "clicks": row.get("clicks", 0),
+                "impressions": row.get("impressions", 0),
+                "position": round(row.get("position", 0), 1),
+            }
+            for row in response.get("rows", [])
+        ]
+
+        comparison = bing_client.compare_queries(bing_rows, gsc_rows, limit=limit)
+        return {
+            "bing_site_url": bing_site_url,
+            "gsc_site_url": gsc_site_url,
+            "google_period": {
+                "start": start_date.strftime("%Y-%m-%d"),
+                "end": end_date.strftime("%Y-%m-%d"),
+            },
+            "bing_period": "latest weekly snapshot",
+            **comparison,
+        }
+    except Exception as e:
+        return _bing_handle_error("seo_compare_google_bing", e)

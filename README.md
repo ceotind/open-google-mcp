@@ -1,6 +1,6 @@
 # Open Google MCP
 
-A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for **Google Ads** (via GAQL), **Search Console**, and **Google Analytics 4**. Designed for AI assistants and LLM agents to safely read campaign performance, search analytics, website traffic, and more.
+A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for **Google Ads** (via GAQL), **Search Console**, **Google Analytics 4**, and **Bing Webmaster Tools**. Designed for AI assistants and LLM agents to safely read campaign performance, search analytics, website traffic, and more.
 
 <img width="1672" height="941" alt="open-google-mcp" src="https://github.com/user-attachments/assets/3e082501-6a06-43bb-b26d-3f026ba76348" />
 
@@ -49,6 +49,28 @@ A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) ser
 
 Keyword Planner tools reuse the same service account + developer token as the Ads tools. `customer_id` is optional — it falls back to `GOOGLE_ADS_DEFAULT_CUSTOMER_ID`, then `GOOGLE_ADS_LOGIN_CUSTOMER_ID` from `.env`. The account needs Keyword Planner access (Tools → Planning → Keyword Planner in Google Ads); manager (MCC) accounts usually don't have it — use a child customer ID. **The developer token must have at least basic access** (explorer-level tokens are rejected: "apply for basic or standard access" — ads.google.com → Tools → API Center → Request higher access).
 
+### Bing Webmaster Tools
+
+| Tool | Input | Description |
+|------|-------|-------------|
+| `bing_get_capabilities` | — | Get tool list with auth status |
+| `bing_list_sites` | — | List verified sites (start here) |
+| `bing_get_query_stats` | `site_url`, `limit?` | Top queries with clicks, impressions, positions |
+| `bing_get_page_stats` | `site_url`, `limit?` | Top pages with clicks, impressions, positions |
+| `bing_get_traffic_stats` | `site_url`, `days?` | Daily clicks and impressions with totals |
+| `bing_get_query_pages` | `site_url`, `query`, `limit?` | Pages ranking for one query |
+| `bing_get_page_queries` | `site_url`, `page`, `limit?` | Queries a page ranks for |
+| `bing_get_url_info` | `site_url`, `url` | Crawl and index details for one URL |
+| `bing_get_crawl_stats` | `site_url` | Crawl volume and response codes |
+| `bing_get_crawl_issues` | `site_url`, `limit?` | Indexing problems found by Bing |
+| `bing_get_link_counts` | `site_url`, `page?` | Inbound link counts per page |
+| `bing_get_sitemaps` | `site_url` | Submitted sitemaps and feeds |
+| `bing_keyword_stats` | `query`, `country?`, `language?` | Historical keyword data |
+| `bing_get_related_keywords` | `query`, `country?`, `language?`, `start/end_date?`, `limit?` | Related keyword discovery |
+| `seo_compare_google_bing` | `bing_site_url`, `gsc_site_url`, `days?`, `limit?` | Join Google and Bing top queries |
+
+Bing tools use an API key — no OAuth and no service account. Bing updates query and page reports weekly. Traffic data updates daily. Query and page reports have no date-range filter.
+
 ### Manager Account Auto-Routing
 
 If `search` targets a **manager (MCC) account** and finds no data directly, it automatically:
@@ -59,14 +81,32 @@ If `search` targets a **manager (MCC) account** and finds no data directly, it a
 
 ## Setup
 
-### Prerequisites (all paths)
+### Prerequisites
 
-- A Google Ads developer token (apply via Google Ads API Center)
-- Google Cloud service account with the following APIs enabled:
+Google credentials are only needed for Google tools. Bing tools need only an API key.
+
+- **Bing only:** a Bing Webmaster Tools API key (see below).
+- **Google Ads:** a developer token (apply via Google Ads API Center).
+- **Google Cloud:** a service account with the following APIs enabled:
   - [Google Ads API](https://console.cloud.google.com/apis/library/googleads.googleapis.com)
   - [Search Console API](https://console.cloud.google.com/apis/library/searchconsole.googleapis.com)
   - [Google Analytics Data API](https://console.cloud.google.com/apis/library/analyticsdata.googleapis.com)
   - [Google Analytics Admin API](https://console.cloud.google.com/apis/library/analyticsadmin.googleapis.com)
+
+#### Bing Webmaster Tools (optional)
+
+Bing tools need one API key. No OAuth and no service account are required.
+
+1. Sign in at [Bing Webmaster Tools](https://www.bing.com/webmasters).
+2. Add your site and verify ownership.
+3. Open **Settings → API Access**.
+4. Accept the terms and click **Generate API Key**.
+5. Add the key to `.env`:
+   ```bash
+   BING_WEBMASTER_API_KEY="your_key_here"
+   ```
+
+The key belongs to your user account. One key covers every verified site.
 
 ---
 
@@ -115,6 +155,9 @@ cp .env.example .env
 | `GOOGLE_ADS_LOGIN_CUSTOMER_ID` | Optional — for MCC account routing |
 | `GOOGLE_ADS_DEFAULT_CUSTOMER_ID` | Optional — default customer_id for Keyword Planner tools (falls back to LOGIN_CUSTOMER_ID) |
 | `GA4_CREDENTIALS_PATH` | Optional — dedicated GA4 credential file |
+| `BING_WEBMASTER_API_KEY` | Optional — Bing Webmaster Tools API key |
+| `BING_CACHE_TTL` | Optional — Bing response cache in seconds (default: 300) |
+| `BING_REQUEST_TIMEOUT` | Optional — Bing HTTP timeout in seconds (default: 30) |
 
 #### 4. Build and start the container (once)
 
@@ -210,6 +253,9 @@ cp .env.example .env
 | `GOOGLE_ADS_LOGIN_CUSTOMER_ID` | Optional — for MCC account routing |
 | `GOOGLE_ADS_DEFAULT_CUSTOMER_ID` | Optional — default customer_id for Keyword Planner tools (falls back to LOGIN_CUSTOMER_ID) |
 | `GA4_CREDENTIALS_PATH` | Optional — dedicated GA4 credential file |
+| `BING_WEBMASTER_API_KEY` | Optional — Bing Webmaster Tools API key |
+| `BING_CACHE_TTL` | Optional — Bing response cache in seconds (default: 300) |
+| `BING_REQUEST_TIMEOUT` | Optional — Bing HTTP timeout in seconds (default: 30) |
 
 #### 4. Run
 
@@ -532,6 +578,101 @@ suggest_geo_target_constants(names=["Ireland"], country_code="IE")
 
 ---
 
+## Bing Webmaster Tools — Usage Examples
+
+Bing needs one API key. Set `BING_WEBMASTER_API_KEY` in `.env`. No OAuth flow runs.
+
+### Start here — list verified sites
+
+```text
+bing_list_sites()
+```
+
+Use the exact `url` value from this response as `site_url` in every other Bing tool.
+
+### Top queries
+
+```text
+bing_get_query_stats(site_url="https://example.com/", limit=50)
+```
+
+### Top pages
+
+```text
+bing_get_page_stats(site_url="https://example.com/", limit=50)
+```
+
+### Daily traffic trend
+
+```text
+bing_get_traffic_stats(site_url="https://example.com/", days=30)
+```
+
+### Pages ranking for one query
+
+```text
+bing_get_query_pages(site_url="https://example.com/", query="salsa classes dublin")
+```
+
+### Queries for one page
+
+```text
+bing_get_page_queries(site_url="https://example.com/", page="https://example.com/classes")
+```
+
+### Inspect a URL
+
+```text
+bing_get_url_info(site_url="https://example.com/", url="https://example.com/classes")
+```
+
+### Crawl issues
+
+```text
+bing_get_crawl_issues(site_url="https://example.com/", limit=50)
+```
+
+### Submitted sitemaps
+
+```text
+bing_get_sitemaps(site_url="https://example.com/")
+```
+
+### Keyword data
+
+```text
+bing_keyword_stats(query="salsa classes dublin", country="ie", language="en-IE")
+bing_get_related_keywords(query="salsa classes dublin", country="ie", language="en-IE")
+```
+
+Use IETF language tags like `en-US`, `en-IE`, or `ja-JP`. Bing rejects a bare code like `en`. The client adds the country when the tag has no region.
+
+`bing_get_related_keywords` defaults to the last 30 days. Bing may return an empty list for low-volume terms.
+
+### Compare Google and Bing
+
+```text
+seo_compare_google_bing(
+  bing_site_url="https://example.com/",
+  gsc_site_url="sc-domain:example.com",
+  days=28,
+  limit=25
+)
+```
+
+The comparison joins queries by normalized text. It returns shared queries with click gaps. It also returns queries that appear on only one engine.
+
+### Bing data limits
+
+- Query and page reports are top-N snapshots.
+- Bing refreshes those reports weekly.
+- No date-range filter exists for query or page data.
+- `bing_get_traffic_stats` is the only daily series.
+- New or low-traffic sites may return empty rows until Bing collects data.
+- Responses are cached for 5 minutes to protect the daily quota.
+
+---
+
 ## GAQL Tips
 
 - Field names must be fully qualified: `campaign.id`, not `id`
@@ -554,6 +695,8 @@ The Keyword Planner logic lives in `src/open_google_mcp/keyword_planner.py` (pur
 ```bash
 source .env && python scripts/smoke_keyword_planner.py [customer_id]
 ```
+
+The Bing transport and normalization logic lives in `src/open_google_mcp/bing_client.py`. Its tests use `httpx.MockTransport`, so they need no network and no key.
 
 ## License
 

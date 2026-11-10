@@ -2,7 +2,7 @@
 
 A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for **Google Ads** (via GAQL), **Search Console**, **Google Analytics 4**, and **Bing Webmaster Tools**. Designed for AI assistants and LLM agents to safely read campaign performance, search analytics, website traffic, and more.
 
-<img width="1672" height="941" alt="open-google-mcp" src="https://github.com/user-attachments/assets/3e082501-6a06-43bb-b26d-3f026ba76348" />
+<img width="1600" height="893" alt="Open Google MCP: stop manually feeding data to your AI. Connect Google Ads, GA4, Search Console, and Bing Webmaster." src="assets/open-google-mcp-hero.png" />
 
 ## Tools
 

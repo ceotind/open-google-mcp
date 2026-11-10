@@ -1288,10 +1288,10 @@ def generate_keyword_ideas(
                      access. Optional — falls back to
                      GOOGLE_ADS_DEFAULT_CUSTOMER_ID, then
                      GOOGLE_ADS_LOGIN_CUSTOMER_ID from .env.
-        keywords: Seed terms (e.g. ['salsa classes', 'salsa dancing']).
+        keywords: Seed terms (e.g. ['running shoes', 'trail running shoes']).
         url: Alternative seed — a URL to extract ideas from.
              Provide keywords, url, or both (both = keyword_and_url seed).
-        geos: Geo targeting, e.g. ['geoTargetConstants/2328'] (Ireland).
+        geos: Geo targeting, e.g. ['geoTargetConstants/2840'] (United States).
               Find IDs with suggest_geo_target_constants. Omit = worldwide.
         language: 'english' (default), any name in the built-in map, or a
                   full resource name like 'languageConstants/1002'.
@@ -1353,7 +1353,7 @@ def generate_keyword_historical_metrics(
                      access. Optional — falls back to
                      GOOGLE_ADS_DEFAULT_CUSTOMER_ID, then
                      GOOGLE_ADS_LOGIN_CUSTOMER_ID from .env.
-        keywords: Exact keywords to look up (e.g. ['salsa classes dublin']).
+        keywords: Exact keywords to look up (e.g. ['running shoes']).
         geos: Geo targeting resource names (see generate_keyword_ideas).
         language: Language name or resource name (default: 'english').
         network: 'GOOGLE_SEARCH' or 'GOOGLE_SEARCH_AND_PARTNERS' (default).
@@ -1468,12 +1468,12 @@ def suggest_geo_target_constants(
 
     **Use this before generate_keyword_ideas/forecast when you need to
     target a country/region** — returns resource names like
-    'geoTargetConstants/2328' (Ireland) to pass as geos.
+    'geoTargetConstants/2840' (United States) to pass as geos.
 
     Args:
-        names: Location names to search, e.g. ['Ireland', 'Dublin'].
+        names: Location names to search, e.g. ['United States', 'New York'].
         country_code: Optional ISO-2 country code to narrow results
-                      (e.g. 'IE').
+                      (e.g. 'US').
         locale: Results language (default: 'en').
     """
     try:
@@ -1828,7 +1828,7 @@ def bing_keyword_stats(
     Args:
         query: The keyword to look up.
         country: Two-letter market code (default: 'us').
-        language: IETF language tag, for example 'en-US' or 'en-IE'
+        language: IETF language tag, for example 'en-US' or 'en-GB'
                   (default: 'en-US'). A bare code like 'en' gets the country
                   added automatically.
     """
@@ -1860,7 +1860,7 @@ def bing_get_related_keywords(
     Args:
         query: Seed keyword.
         country: Two-letter market code (default: 'us').
-        language: IETF language tag, for example 'en-US' or 'en-IE'
+        language: IETF language tag, for example 'en-US' or 'en-GB'
                   (default: 'en-US'). A bare code like 'en' gets the country
                   added automatically.
         start_date: ISO date (YYYY-MM-DD). Default: 30 days ago.

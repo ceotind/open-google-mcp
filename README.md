@@ -45,7 +45,7 @@ A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) ser
 | `generate_keyword_ideas` | `customer_id?`, `keywords?`/`url?`, `geos?`, `language?`, `network?`, `page_size?` | Keyword ideas with search volume, competition, bid ranges |
 | `generate_keyword_historical_metrics` | `customer_id?`, `keywords`, `geos?`, `language?` | Historical metrics for exact keywords |
 | `generate_keyword_forecast_metrics` | `customer_id?`, `keywords`, `match_types?`, `currency_code?`, `start/end_date?`, `budget/bid?` | Simulated campaign forecast (impressions, clicks, CPC, cost) |
-| `suggest_geo_target_constants` | `names`, `country_code?`, `locale?` | Look up geo resource names (e.g. Ireland → `geoTargetConstants/2372`) |
+| `suggest_geo_target_constants` | `names`, `country_code?`, `locale?` | Look up geo resource names (e.g. United States → `geoTargetConstants/2840`) |
 
 Keyword Planner tools reuse the same service account + developer token as the Ads tools. `customer_id` is optional — it falls back to `GOOGLE_ADS_DEFAULT_CUSTOMER_ID`, then `GOOGLE_ADS_LOGIN_CUSTOMER_ID` from `.env`. The account needs Keyword Planner access (Tools → Planning → Keyword Planner in Google Ads); manager (MCC) accounts usually don't have it — use a child customer ID. **The developer token must have at least basic access** (explorer-level tokens are rejected: "apply for basic or standard access" — ads.google.com → Tools → API Center → Request higher access).
 
@@ -489,7 +489,7 @@ ga4_run_report(
 )
 ```
 
-### Filter by country (e.g. only Ireland)
+### Filter by country (e.g. only United States)
 
 ```
 ga4_run_report(
@@ -499,7 +499,7 @@ ga4_run_report(
   start_date="28daysAgo",
   end_date="today",
   filters={"field": "country", "type": "string_filter",
-           "value": "Ireland", "match_type": "EXACT"},
+           "value": "United States", "match_type": "EXACT"},
   limit=10
 )
 ```
@@ -543,8 +543,8 @@ You can use relative or absolute dates:
 
 ```text
 generate_keyword_ideas(
-  keywords=["salsa classes dublin", "salsa dancing"],
-  geos=["geoTargetConstants/2372"],   # Ireland — find via suggest_geo_target_constants
+  keywords=["running shoes", "trail running shoes"],
+  geos=["geoTargetConstants/2840"],   # United States — find via suggest_geo_target_constants
   language="english"
 )
 ```
@@ -553,8 +553,8 @@ generate_keyword_ideas(
 
 ```text
 generate_keyword_historical_metrics(
-  keywords=["salsa classes dublin", "bachata classes dublin"],
-  geos=["geoTargetConstants/2372"]
+  keywords=["running shoes", "hiking boots"],
+  geos=["geoTargetConstants/2840"]
 )
 ```
 
@@ -562,18 +562,18 @@ generate_keyword_historical_metrics(
 
 ```text
 generate_keyword_forecast_metrics(
-  keywords=["salsa classes dublin", "salsa dancing"],
+  keywords=["running shoes", "trail running shoes"],
   match_types=["PHRASE", "EXACT"],
-  currency_code="EUR",
-  daily_budget_micros=20000000,   # €20/day
-  max_cpc_bid_micros=500000       # €0.50 max CPC
+  currency_code="USD",
+  daily_budget_micros=20000000,   # $20/day
+  max_cpc_bid_micros=500000       # $0.50 max CPC
 )
 ```
 
 ### Find a geo constant
 
 ```text
-suggest_geo_target_constants(names=["Ireland"], country_code="IE")
+suggest_geo_target_constants(names=["United States"], country_code="US")
 ```
 
 ---
@@ -611,7 +611,7 @@ bing_get_traffic_stats(site_url="https://example.com/", days=30)
 ### Pages ranking for one query
 
 ```text
-bing_get_query_pages(site_url="https://example.com/", query="salsa classes dublin")
+bing_get_query_pages(site_url="https://example.com/", query="running shoes")
 ```
 
 ### Queries for one page
@@ -641,11 +641,11 @@ bing_get_sitemaps(site_url="https://example.com/")
 ### Keyword data
 
 ```text
-bing_keyword_stats(query="salsa classes dublin", country="ie", language="en-IE")
-bing_get_related_keywords(query="salsa classes dublin", country="ie", language="en-IE")
+bing_keyword_stats(query="running shoes", country="us", language="en-US")
+bing_get_related_keywords(query="running shoes", country="us", language="en-US")
 ```
 
-Use IETF language tags like `en-US`, `en-IE`, or `ja-JP`. Bing rejects a bare code like `en`. The client adds the country when the tag has no region.
+Use IETF language tags like `en-US`, `en-GB`, or `ja-JP`. Bing rejects a bare code like `en`. The client adds the country when the tag has no region.
 
 `bing_get_related_keywords` defaults to the last 30 days. Bing may return an empty list for low-volume terms.
 

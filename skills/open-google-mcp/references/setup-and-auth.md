@@ -44,11 +44,12 @@ First run takes about a minute. Later runs start in under a second.
 ### Docker
 
 ```
-docker compose build
-docker compose up -d open-google-mcp
+docker run -i --rm --env-file /abs/path/.env ghcr.io/ceotind/open-google-mcp:latest
 ```
 
-Clients attach with `docker compose exec`, never `docker compose run`. Run creates a new container on every launch, and a long-running stdio server never exits, so containers pile up.
+The image is prebuilt on GHCR. One container starts per client session and `--rm` removes it. The `--env-file` path must be absolute.
+
+Contributors build locally with `docker compose build`, then run `docker compose run --rm open-google-mcp`.
 
 ### Local checkout
 

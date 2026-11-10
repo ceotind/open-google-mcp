@@ -1,6 +1,6 @@
 services:
   open-google-mcp:
     build: .
+    image: ghcr.io/ceotind/open-google-mcp:dev
     env_file: .env
     stdin_open: true
-    tty: true

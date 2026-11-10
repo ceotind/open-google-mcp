@@ -1,6 +1,6 @@
 [project]
 name = "open-google-mcp"
-version = "0.2.1"
+version = "0.2.2"
 description = "Read-only MCP server for Google Ads (GAQL), Search Console, Google Analytics 4, and Bing Webmaster Tools"
 readme = "README.md"
 requires-python = ">=3.10"

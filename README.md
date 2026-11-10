@@ -248,32 +248,34 @@ Put your credentials in the `env` block. Keep the `\n` escapes inside the privat
 
 ### Option B: Docker (no Python required)
 
-#### 1. Clone
+The image is prebuilt, so there is no clone and no build step.
+
+#### 1. Pull the image
 
 ```bash
-git clone https://github.com/ceotind/open-google-mcp.git
-cd open-google-mcp
+docker pull ghcr.io/ceotind/open-google-mcp:latest
 ```
 
-#### 2. Configure `.env`
+Pin a version instead of `latest` if you want stable behaviour, for example `:0.2.2`.
+
+#### 2. Create a credentials file
 
 ```bash
-cp .env.example .env
-# Edit .env with the service account values + developer token
+mkdir -p ~/.config/open-google-mcp
+cp .env.example ~/.config/open-google-mcp/.env
 ```
 
-#### 3. Build and start the container (once)
+Edit that file with the variables from the [Credentials](#credentials) table above. Keep it at an absolute path. The client passes it with `--env-file`.
+
+#### 3. Test it
 
 ```bash
-docker compose build
-docker compose up -d open-google-mcp
+docker run -i --rm --env-file ~/.config/open-google-mcp/.env ghcr.io/ceotind/open-google-mcp:latest
 ```
 
-> This starts a single long-lived container. Client configs attach to it with
-> `docker compose exec` instead of `docker compose run`, so a new container is
-> **not** created every session. (Don't use `docker compose run` for a client —
-> it spawns a new container each launch and `--rm` never removes a long-running
-> stdio server, so containers pile up.)
+The server speaks MCP over stdio and waits for a client. A silent terminal is correct. Press `Ctrl+C` to stop it.
+
+No container is left behind, because of `--rm`.
 
 #### 4. MCP client config
 
@@ -283,8 +285,11 @@ docker compose up -d open-google-mcp
   "mcpServers": {
     "open-google-mcp": {
       "command": "docker",
-      "args": ["compose", "exec", "-T", "open-google-mcp", "python", "-m", "open_google_mcp"],
-      "workdir": "/path/to/open-google-mcp"
+      "args": [
+        "run", "-i", "--rm",
+        "--env-file", "/home/you/.config/open-google-mcp/.env",
+        "ghcr.io/ceotind/open-google-mcp:latest"
+      ]
     }
   }
 }
@@ -296,19 +301,34 @@ docker compose up -d open-google-mcp
   "mcp": {
     "open-google-mcp": {
       "type": "local",
-      "command": ["docker", "compose", "exec", "-T", "open-google-mcp", "python", "-m", "open_google_mcp"],
-      "cwd": "/path/to/open-google-mcp",
+      "command": [
+        "docker", "run", "-i", "--rm",
+        "--env-file", "/home/you/.config/open-google-mcp/.env",
+        "ghcr.io/ceotind/open-google-mcp:latest"
+      ],
       "enabled": true
     }
   }
 }
 ```
 
-**Cursor:**
-- **Name**: `open-google-mcp`
-- **Type**: `command`
-- **Command**: `docker compose exec -T open-google-mcp python -m open_google_mcp`
-- **Working directory**: `/path/to/open-google-mcp`
+**Cursor:** use the same `command` and `args` as the Claude Desktop block.
+
+> The `--env-file` path must be absolute. GUI clients do not start in your shell, so `~` and relative paths fail.
+
+#### Build from source instead
+
+Contributors can build the image locally:
+
+```bash
+git clone https://github.com/ceotind/open-google-mcp.git
+cd open-google-mcp
+cp .env.example .env
+docker compose build
+docker compose run --rm open-google-mcp
+```
+
+`docker compose run` creates one container per session and removes it on exit.
 
 ---
 

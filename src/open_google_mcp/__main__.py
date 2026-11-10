@@ -3,7 +3,7 @@ import sys
 
 from .server import mcp
 
-DOCS_URL = "https://github.com/ceotind/open-google-mcp#setup"
+DOCS_URL = "https://github.com/ceotind/open-google-mcp#credentials"
 
 
 def _env(name: str) -> str:

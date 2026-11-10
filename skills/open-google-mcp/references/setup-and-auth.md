@@ -71,7 +71,7 @@ The `uvx` form needs no path:
 }
 ```
 
-For Docker and checkout, point the client at the absolute path of `server.sh` or at the Docker exec form. The project README, section "Setup", lists every client.
+For Docker, the client runs `docker run -i --rm --env-file <absolute path> ghcr.io/ceotind/open-google-mcp:latest` and needs no `env` block. For a checkout, point the client at the absolute path of `server.sh`. Per-client examples live in `docs/clients.md`.
 
 ## Troubleshooting
 

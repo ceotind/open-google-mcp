@@ -4,6 +4,10 @@ A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) ser
 
 <img width="1600" height="893" alt="Open Google MCP: stop manually feeding data to your AI. Connect Google Ads, GA4, Search Console, and Bing Webmaster." src="assets/open-google-mcp-hero.png" />
 
+[![PyPI](https://img.shields.io/pypi/v/open-google-mcp.svg)](https://pypi.org/project/open-google-mcp/)
+[![Python](https://img.shields.io/pypi/pyversions/open-google-mcp.svg)](https://pypi.org/project/open-google-mcp/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 ## Quick start
 
 ```bash

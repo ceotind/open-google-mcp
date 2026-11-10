@@ -112,12 +112,66 @@ def _get_child_accounts(client, customer_id: str) -> list[dict]:
             client, ga_service, customer_id,
             "SELECT customer_client.id, customer_client.descriptive_name, "
             "customer_client.manager, customer_client.status "
-            "FROM customer_client WHERE customer_client.status = 'ENABLED' LIMIT 100",
+            "FROM customer_client WHERE customer_client.status = 'ENABLED' "
+            "AND customer_client.manager = FALSE LIMIT 100",
         )
         return results
     except Exception:
         _log_exc(f"get_child_accounts for {customer_id}")
         return []
+
+
+def _is_manager_metrics_error(e: Exception) -> bool:
+    """Return True when Google Ads rejected metrics on a manager account."""
+    failure = getattr(e, "failure", None)
+    for err in getattr(failure, "errors", None) or []:
+        code = getattr(err, "error_code", None)
+        try:
+            if int(getattr(code, "query_error", 0)) == 59:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return "manager account" in str(e).lower()
+
+
+_ACCOUNT_LEVEL_RESOURCES = {
+    "campaign", "ad_group", "ad_group_ad", "ad_group_criterion",
+    "keyword_view", "search_term_view", "bidding_strategy",
+    "campaign_budget", "campaign_criterion", "customer_client",
+    "geographic_view", "user_interest", "user_list",
+}
+
+
+def _route_to_children(client, ga_service, customer_id: str, query: str) -> list[dict]:
+    """Run a query against each child account of a manager account.
+
+    Returns annotated rows, or an empty list when the account is not a manager
+    or when no child account returns rows.
+    """
+    if not _is_manager_account(client, customer_id):
+        return []
+
+    results: list[dict] = []
+    for child in _get_child_accounts(client, customer_id):
+        child_id = child.get("customer_client.id", "")
+        child_name = child.get("customer_client.descriptive_name", child_id)
+        if not child_id:
+            continue
+        try:
+            child_rows = _run_gaql(client, ga_service, child_id, query)
+        except Exception:
+            _log_exc(f"child query for {child_id}")
+            continue
+        for row in child_rows:
+            row["_source_customer_id"] = child_id
+            row["_source_customer_name"] = child_name
+        results.extend(child_rows)
+
+    if results:
+        results.insert(0, {
+            "_note": "Manager account detected. Results auto-routed from child accounts.",
+        })
+    return results
 
 
 @mcp.tool()
@@ -268,49 +322,21 @@ def search(
 
         results = _run_gaql(client, ga_service, customer_id, query)
 
-        _account_resources = {
-            "campaign", "ad_group", "ad_group_ad", "ad_group_criterion",
-            "keyword_view", "search_term_view", "bidding_strategy",
-            "campaign_budget", "campaign_criterion", "customer_client",
-            "geographic_view", "user_interest", "user_list",
-        }
-
-        auto_routed = False
-        if not results and resource in _account_resources:
-            is_manager = _is_manager_account(client, customer_id)
-            if is_manager:
-                children = _get_child_accounts(client, customer_id)
-                if len(children) == 1:
-                    child_id = children[0].get("customer_client.id", "")
-                    child_name = children[0].get("customer_client.descriptive_name", child_id)
-                    child_results = _run_gaql(client, ga_service, child_id, query)
-                    for r in child_results:
-                        r["_source_customer_id"] = child_id
-                        r["_source_customer_name"] = child_name
-                    if child_results:
-                        results = child_results
-                        auto_routed = True
-                elif len(children) > 1:
-                    for child in children:
-                        child_id = child.get("customer_client.id", "")
-                        child_name = child.get("customer_client.descriptive_name", child_id)
-                        child_results = _run_gaql(client, ga_service, child_id, query)
-                        for r in child_results:
-                            r["_source_customer_id"] = child_id
-                            r["_source_customer_name"] = child_name
-                        results.extend(child_results)
-                    if results:
-                        auto_routed = True
-
-        if auto_routed:
-            info = {
-                "_note": f"Manager account detected. Results auto-routed from child accounts.",
-            }
-            results.insert(0, info)
+        if not results and resource in _ACCOUNT_LEVEL_RESOURCES:
+            results = _route_to_children(client, ga_service, customer_id, query)
 
         return results
     except GoogleAdsException as e:
         _log_exc(f"search query={query!r}")
+        if resource in _ACCOUNT_LEVEL_RESOURCES and _is_manager_metrics_error(e):
+            try:
+                client = ads_client.get_client()
+                ga_service = client.get_service("GoogleAdsService")
+                routed = _route_to_children(client, ga_service, customer_id, query)
+                if routed:
+                    return routed
+            except Exception:
+                _log_exc("manager auto-routing fallback failed")
         return [{"error": _handle_google_ads_error(e)}]
     except Exception as e:
         _log_exc(f"search query={query!r}")

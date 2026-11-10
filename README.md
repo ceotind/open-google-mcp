@@ -184,6 +184,8 @@ The first run downloads dependencies and takes about a minute. Later runs start 
 
 Without uv, `pipx run open-google-mcp` does the same job.
 
+To upgrade later, run `uvx open-google-mcp@latest`. Plain `uvx open-google-mcp` reuses the cached version.
+
 #### 3. MCP client config
 
 Put your credentials in the `env` block. Keep the `\n` escapes inside the private key.

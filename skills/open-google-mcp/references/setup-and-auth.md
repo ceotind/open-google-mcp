@@ -1,6 +1,6 @@
 # Setup, Credentials and Client Config
 
-The server runs as a stdio MCP process. Two install paths: Docker or a local Python install. Copy `mcp.json` and replace the path with your own.
+The server runs as a stdio MCP process. Three install paths, in order of speed: `uvx`, Docker, then a local checkout. The `uvx` path needs no clone and no project folder.
 
 ## Environment Variables
 
@@ -21,7 +21,7 @@ Google tools need a service account plus an Ads developer token. Bing needs one 
 | `BING_CACHE_TTL` | optional, seconds, default 300 |
 | `BING_REQUEST_TIMEOUT` | optional, seconds, default 30 |
 
-Credentials live in `.env` at the project root. Never commit it.
+Credentials reach the process one of two ways. The `uvx` install has no project folder, so it must use the client `env` block. The Docker and checkout installs read `.env` at the project root. Never commit it.
 
 ## Access Each Product Needs
 
@@ -33,7 +33,15 @@ The same service account email goes into three places:
 
 The four Google APIs must be enabled in the GCP project: Google Ads API, Search Console API, Analytics Data API, Analytics Admin API.
 
-## Docker Path
+## install paths
+
+### uvx
+
+`uvx open-google-mcp` runs the published package from the PyPI cache. It needs uv, not Python. Nothing installs globally and no folder is created. All config goes in the client `env` block. Credential files, such as `GA4_CREDENTIALS_PATH`, need absolute paths in this mode.
+
+First run takes about a minute. Later runs start in under a second.
+
+### Docker
 
 ```
 docker compose build
@@ -42,13 +50,27 @@ docker compose up -d open-google-mcp
 
 Clients attach with `docker compose exec`, never `docker compose run`. Run creates a new container on every launch, and a long-running stdio server never exits, so containers pile up.
 
-## Local Python Path
+### Local checkout
 
-Install into a virtual environment at the project root, then run the entry point. `server.sh` starts it from the checkout.
+Install into a virtual environment at the project root, then run the entry point. `server.sh` starts it from the checkout and loads `.env` for you.
 
 ## Client Config
 
-Point the client at the absolute path of `server.sh`, or at the Docker exec form. Both are documented in the project README, section "MCP client config".
+The `uvx` form needs no path:
+
+```json
+{
+  "mcpServers": {
+    "open-google-mcp": {
+      "command": "uvx",
+      "args": ["open-google-mcp"],
+      "env": { "GOOGLE_ADS_DEVELOPER_TOKEN": "...", "GOOGLE_SERVICE_ACCOUNT_EMAIL": "...", "GOOGLE_SERVICE_ACCOUNT_KEY": "..." }
+    }
+  }
+}
+```
+
+For Docker and checkout, point the client at the absolute path of `server.sh` or at the Docker exec form. The project README, section "Setup", lists every client.
 
 ## Troubleshooting
 

@@ -1,7 +1,7 @@
 ---
 name: open-google-mcp
 description: Query Google Ads, GSC, GA4 and Bing with this MCP server.
-version: 0.1.0
+version: 0.2.0
 author: Sharp Digital
 license: Proprietary
 platforms: [linux, macos, windows]

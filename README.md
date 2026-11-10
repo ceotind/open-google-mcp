@@ -4,6 +4,17 @@ A read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) ser
 
 <img width="1600" height="893" alt="Open Google MCP: stop manually feeding data to your AI. Connect Google Ads, GA4, Search Console, and Bing Webmaster." src="assets/open-google-mcp-hero.png" />
 
+## Quick start
+
+```bash
+uvx open-google-mcp
+```
+
+That downloads the server, runs it, and leaves your system alone. Point your MCP client at `uvx open-google-mcp` and paste your credentials into the `env` block. See [Setup](#setup) for the full config.
+
+Prefer Docker or a git checkout? Both work. See [Option B](#option-b-docker-no-python-required) and [Option C](#option-c-python-local-checkout).
+
+
 ## Tools
 
 ### Google Ads
@@ -110,39 +121,18 @@ The key belongs to your user account. One key covers every verified site.
 
 ---
 
-### Option A: Docker (recommended — no Python required)
-
-#### 1. Clone
-
-```bash
-git clone https://github.com/ceotind/open-google-mcp.git
-cd open-google-mcp
-```
-
-#### 2. Create and authorize a service account
+### Credentials
 
 A single service account authenticates Google Ads, Search Console, and Google Analytics 4.
 
 1. Go to **GCP Console → APIs & Services → Credentials → Create Credentials → Service Account**
-2. Download the JSON key file, then copy these fields into `.env`:
-   - `GOOGLE_SERVICE_ACCOUNT_EMAIL`
-   - `GOOGLE_SERVICE_ACCOUNT_KEY` (the `private_key` — keep the `\n` escapes)
-   - `GOOGLE_SERVICE_ACCOUNT_KEY_ID`
-   - `GOOGLE_SERVICE_ACCOUNT_CLIENT_ID`
-   - `GOOGLE_SERVICE_ACCOUNT_PROJECT_ID`
+2. Download the JSON key file. You need five fields from it.
 3. **Google Ads**: add the service account email in your manager account
    (**Settings → Account access → Service account users**)
 4. **Search Console**: add the same email to your property
    (**Settings → Users and permissions → Add user**, grant Full access)
 5. **Google Analytics 4**: add the same email to your GA4 property
    (**Admin → Account Access Management → Add user → Viewer**)
-
-#### 3. Configure `.env`
-
-```bash
-cp .env.example .env
-# Edit .env with the service account values + developer token
-```
 
 | Variable | Description |
 |----------|-------------|
@@ -159,7 +149,114 @@ cp .env.example .env
 | `BING_CACHE_TTL` | Optional — Bing response cache in seconds (default: 300) |
 | `BING_REQUEST_TIMEOUT` | Optional — Bing HTTP timeout in seconds (default: 30) |
 
-#### 4. Build and start the container (once)
+Supply these variables one of two ways. Never commit them.
+
+- **Client `env` block** — used by the `uvx` install. That mode has no `.env` file.
+- **`.env` file** at the project root — used by the Docker and checkout installs.
+
+---
+
+### Option A: `uvx` (recommended — no clone, no Python setup)
+
+`uvx` downloads the package into a cache and runs it. Nothing installs globally.
+
+#### 1. Install uv
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+On macOS you can also run `brew install uv`. On Windows use `winget install --id=astral-sh.uv -e`.
+
+#### 2. Try it
+
+```bash
+uvx open-google-mcp
+```
+
+The server speaks MCP over stdio and waits for a client. A silent terminal is correct. Press `Ctrl+C` to stop.
+
+The first run downloads dependencies and takes about a minute. Later runs start in under a second.
+
+Without uv, `pipx run open-google-mcp` does the same job.
+
+#### 3. MCP client config
+
+Put your credentials in the `env` block. Keep the `\n` escapes inside the private key.
+
+**Claude Desktop:**
+```json
+{
+  "mcpServers": {
+    "open-google-mcp": {
+      "command": "uvx",
+      "args": ["open-google-mcp"],
+      "env": {
+        "GOOGLE_ADS_DEVELOPER_TOKEN": "your_token",
+        "GOOGLE_SERVICE_ACCOUNT_EMAIL": "svc@project.iam.gserviceaccount.com",
+        "GOOGLE_SERVICE_ACCOUNT_KEY": "-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----\n",
+        "GOOGLE_SERVICE_ACCOUNT_KEY_ID": "key_id",
+        "GOOGLE_SERVICE_ACCOUNT_CLIENT_ID": "client_id",
+        "GOOGLE_SERVICE_ACCOUNT_PROJECT_ID": "your-project",
+        "BING_WEBMASTER_API_KEY": "optional"
+      }
+    }
+  }
+}
+```
+
+**opencode** (`opencode.json`):
+```json
+{
+  "mcp": {
+    "open-google-mcp": {
+      "type": "local",
+      "command": ["uvx", "open-google-mcp"],
+      "environment": {
+        "GOOGLE_ADS_DEVELOPER_TOKEN": "your_token"
+      },
+      "enabled": true
+    }
+  }
+}
+```
+
+**VS Code** (`.vscode/mcp.json`):
+```json
+{
+  "servers": {
+    "open-google-mcp": {
+      "command": "uvx",
+      "args": ["open-google-mcp"],
+      "env": {
+        "GOOGLE_ADS_DEVELOPER_TOKEN": "your_token"
+      }
+    }
+  }
+}
+```
+
+**Cursor** (`.cursor/mcp.json`): same shape as the Claude Desktop block.
+
+---
+
+### Option B: Docker (no Python required)
+
+#### 1. Clone
+
+```bash
+git clone https://github.com/ceotind/open-google-mcp.git
+cd open-google-mcp
+```
+
+#### 2. Configure `.env`
+
+```bash
+cp .env.example .env
+# Edit .env with the service account values + developer token
+```
+
+#### 3. Build and start the container (once)
 
 ```bash
 docker compose build
@@ -172,7 +269,7 @@ docker compose up -d open-google-mcp
 > it spawns a new container each launch and `--rm` never removes a long-running
 > stdio server, so containers pile up.)
 
-#### 5. MCP client config
+#### 4. MCP client config
 
 **Claude Desktop:**
 ```json
@@ -194,7 +291,7 @@ docker compose up -d open-google-mcp
     "open-google-mcp": {
       "type": "local",
       "command": ["docker", "compose", "exec", "-T", "open-google-mcp", "python", "-m", "open_google_mcp"],
-      "workdir": "/path/to/open-google-mcp",
+      "cwd": "/path/to/open-google-mcp",
       "enabled": true
     }
   }
@@ -209,7 +306,9 @@ docker compose up -d open-google-mcp
 
 ---
 
-### Option B: Python (local install)
+### Option C: Python (local checkout)
+
+Use this path to develop the server or pin it to a local commit.
 
 #### 1. Clone and install
 
@@ -221,43 +320,15 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-#### 2. Create and authorize a service account
-
-Same steps as Option A above — a single service account works for Ads, GSC, and GA4.
-
-1. Go to **GCP Console → APIs & Services → Credentials → Create Credentials → Service Account**
-2. Download the JSON key file, then copy these fields into `.env`:
-   - `GOOGLE_SERVICE_ACCOUNT_EMAIL`
-   - `GOOGLE_SERVICE_ACCOUNT_KEY`
-   - `GOOGLE_SERVICE_ACCOUNT_KEY_ID`
-   - `GOOGLE_SERVICE_ACCOUNT_CLIENT_ID`
-   - `GOOGLE_SERVICE_ACCOUNT_PROJECT_ID`
-3. **Google Ads**: add the service account email in your manager account
-4. **Search Console**: add the same email to your property with Full access
-5. **Google Analytics 4**: add the same email to your GA4 property with Viewer access
-
-#### 3. Configure `.env`
+#### 2. Configure `.env`
 
 ```bash
 cp .env.example .env
 ```
 
-| Variable | Description |
-|----------|-------------|
-| `GOOGLE_ADS_DEVELOPER_TOKEN` | Your Google Ads API developer token |
-| `GOOGLE_SERVICE_ACCOUNT_EMAIL` | Service account email |
-| `GOOGLE_SERVICE_ACCOUNT_KEY` | Private key (with `\n` newlines) |
-| `GOOGLE_SERVICE_ACCOUNT_KEY_ID` | Private key ID |
-| `GOOGLE_SERVICE_ACCOUNT_CLIENT_ID` | Client ID |
-| `GOOGLE_SERVICE_ACCOUNT_PROJECT_ID` | GCP project ID |
-| `GOOGLE_ADS_LOGIN_CUSTOMER_ID` | Optional — for MCC account routing |
-| `GOOGLE_ADS_DEFAULT_CUSTOMER_ID` | Optional — default customer_id for Keyword Planner tools (falls back to LOGIN_CUSTOMER_ID) |
-| `GA4_CREDENTIALS_PATH` | Optional — dedicated GA4 credential file |
-| `BING_WEBMASTER_API_KEY` | Optional — Bing Webmaster Tools API key |
-| `BING_CACHE_TTL` | Optional — Bing response cache in seconds (default: 300) |
-| `BING_REQUEST_TIMEOUT` | Optional — Bing HTTP timeout in seconds (default: 30) |
+The variables are the same as the [Credentials](#credentials) table above.
 
-#### 4. Run
+#### 3. Run
 
 ```bash
 source .venv/bin/activate
@@ -265,12 +336,12 @@ source .env
 python -m open_google_mcp
 ```
 
-Or use the wrapper script (loads `.env` automatically):
+Or use the wrapper script. It loads `.env` for you:
 ```bash
 ./server.sh
 ```
 
-#### 5. MCP client config
+#### 4. MCP client config
 
 **Claude Desktop:**
 ```json
